@@ -889,7 +889,7 @@ export default function FoodOrders() {
   const handleCategoryEdit = (cat) => {
     setEditCategoryId(cat.id);
     setCategoryName(cat.name);
-    setCategoryPreviewUrl(getImageUrl(`static/food_categories/${cat.image}`));
+    setCategoryPreviewUrl(getImageUrl(`food_categories/${cat.image}`));
     setCategoryImageFile(null);
   };
 
@@ -3554,7 +3554,7 @@ export default function FoodOrders() {
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                 {categories.map((cat) => (
                   <div key={cat.id} className="border border-gray-200 rounded-lg p-4 text-center hover:shadow-lg transition-shadow">
-                    <img src={getImageUrl(`static/food_categories/${cat.image}`)} alt={cat.name} className="w-full h-24 object-cover rounded mb-2" />
+                    <img src={getImageUrl(`food_categories/${cat.image}`)} alt={cat.name} className="w-full h-24 object-cover rounded mb-2" />
                     <h3 className="font-semibold mb-2">{cat.name}</h3>
                     <div className="flex gap-2">
                       <button

@@ -6,8 +6,8 @@ from app.utils.auth import get_db, get_current_user
 from app.models.food_category import FoodCategory
 from app.models.user import User
 import os, shutil, uuid
-import uuid,os, shutil
-UPLOAD_DIR = "static/food_categories"
+
+UPLOAD_DIR = "uploads/food_categories"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 router = APIRouter(prefix="/food-categories", tags=["Food Categories"])
 
@@ -17,7 +17,7 @@ def create_category(name: str = Form(...), image: UploadFile = File(None), db: S
     filename = None
     if image:
         filename = f"category_{uuid.uuid4().hex}_{image.filename}"
-        path = os.path.join("static/food_categories", filename)
+        path = os.path.join(UPLOAD_DIR, filename)
         with open(path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
     
