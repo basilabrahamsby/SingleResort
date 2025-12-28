@@ -1439,19 +1439,7 @@ export default function FoodOrders() {
           <h2 className="text-3xl font-extrabold text-indigo-700">🍽 Food & Beverage Management</h2>
         </div>
 
-        {/* DEBUG SECTION */}
-        <div className="bg-yellow-100 p-4 rounded-lg border-2 border-yellow-400 mb-4 text-xs font-mono overflow-auto max-h-60">
-          <h3 className="font-bold text-yellow-800">🔍 Image Debugger</h3>
-          <div>Origin: {window.location.origin}</div>
-          <div>Path: {window.location.pathname}</div>
-          <div>Media Base URL: {getMediaBaseUrl()}</div>
-          <div>Sample Food Item URL: {foodItems.length > 0 && foodItems[0].images?.length > 0 ? getImageUrl(foodItems[0].images[0].image_url) : 'No items/images'}</div>
-          <div>Sample Category URL: {categories.length > 0 ? getImageUrl(`uploads/food_categories/${categories[0].image}`) : 'No categories'}</div>
-          <div className="mt-2">
-            <strong>Raw Item Image Data:</strong>
-            <pre>{JSON.stringify(foodItems.slice(0, 2).map(i => ({ n: i.name, img: i.images })), null, 2)}</pre>
-          </div>
-        </div>
+
 
 
         {/* Tabs Navigation */}
