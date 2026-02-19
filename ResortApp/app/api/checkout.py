@@ -1398,6 +1398,12 @@ async def handleCompleteCheckoutRequest(
                 # DETERMINED LAUNDRY STATUS
                 is_actually_laundry = asset.is_laundry or asset_is_laundry
                 
+                # AUTO-DETECT: If item has track_laundry_cycle=True, always treat as laundry
+                # This prevents bed sheets/towels from being incorrectly logged as waste
+                if t_item and getattr(t_item, 'track_laundry_cycle', False) and not is_actually_laundry:
+                    is_actually_laundry = True
+                    print(f"[CHECKOUT] Auto-detected laundry item '{t_item.name}' via track_laundry_cycle flag")
+                
                 # ENHANCED LOGIC: If no laundry location ID provided but is_laundry is checked, find first available
                 if is_actually_laundry and not asset_laundry_id:
                      first_laundry = db.query(Location).filter(Location.location_type == 'LAUNDRY', Location.is_active == True).first()
@@ -1467,7 +1473,7 @@ async def handleCompleteCheckoutRequest(
                 
                 # 4. Deduct LocationStock (The Fix)
                 # Deduct if moving out (laundry, returned, OR waste/damaged)
-                if asset.is_laundry or asset.is_returned or asset.is_waste or asset.is_damaged:
+                if is_actually_laundry or asset.is_returned or asset.is_waste or asset.is_damaged:
                     loc_stock = db.query(LocationStock).filter(
                         LocationStock.location_id == target_location_id,
                         LocationStock.item_id == target_item_id
@@ -1533,6 +1539,21 @@ async def handleCompleteCheckoutRequest(
                     )
                     db.add(laundry_entry)
                     print(f"[CHECKOUT] Created LaundryLog entry for asset {asset.item_name}")
+
+                    # Create InventoryTransaction for Room → Laundry movement
+                    laundry_txn = InventoryTransaction(
+                        item_id=target_item_id,
+                        transaction_type="transfer",
+                        quantity=1,
+                        unit_price=0.0,
+                        reference_number=f"LAUNDRY-CHK-{checkout_request.id}",
+                        notes=f"Linen to Laundry - Room {checkout_request.room_number}",
+                        created_by=current_user.id,
+                        source_location_id=target_location_id,
+                        destination_location_id=asset_laundry_id
+                    )
+                    db.add(laundry_txn)
+                    print(f"[CHECKOUT] Created Room→Laundry transaction for {asset.item_name}")
 
                     # Replacement request logic (Consolidated)
                     if asset.request_replacement:
