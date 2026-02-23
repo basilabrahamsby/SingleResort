@@ -1,20 +1,20 @@
 {
   "files": {
     "main.css": "/orchidadmin/static/css/main.6ec484f0.css",
-    "main.js": "/orchidadmin/static/js/main.345c12ff.js",
+    "main.js": "/orchidadmin/static/js/main.03f9c172.js",
     "static/js/239.3742c463.chunk.js": "/orchidadmin/static/js/239.3742c463.chunk.js",
     "static/js/213.b8d4b5a9.chunk.js": "/orchidadmin/static/js/213.b8d4b5a9.chunk.js",
     "static/js/455.929e50be.chunk.js": "/orchidadmin/static/js/455.929e50be.chunk.js",
     "static/media/orchidlogo.png": "/orchidadmin/static/media/orchidlogo.f30f5147bac11ff9932e.png",
     "index.html": "/orchidadmin/index.html",
     "main.6ec484f0.css.map": "/orchidadmin/static/css/main.6ec484f0.css.map",
-    "main.345c12ff.js.map": "/orchidadmin/static/js/main.345c12ff.js.map",
+    "main.03f9c172.js.map": "/orchidadmin/static/js/main.03f9c172.js.map",
     "239.3742c463.chunk.js.map": "/orchidadmin/static/js/239.3742c463.chunk.js.map",
     "213.b8d4b5a9.chunk.js.map": "/orchidadmin/static/js/213.b8d4b5a9.chunk.js.map",
     "455.929e50be.chunk.js.map": "/orchidadmin/static/js/455.929e50be.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.6ec484f0.css",
-    "static/js/main.345c12ff.js"
+    "static/js/main.03f9c172.js"
   ]
 }

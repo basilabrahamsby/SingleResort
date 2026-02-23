@@ -110,6 +110,20 @@ const availablePermissions = [
     ]
   },
   {
+    label: "Mobile App Access",
+    value: "/mobile",
+    tabs: [
+      { label: "Owner Mobile App", value: "/mobile/owner" },
+      { label: "Manager Mobile App", value: "/mobile/manager" },
+      { label: "Kitchen/F&B Module", value: "/mobile/kitchen" },
+      { label: "Housekeeping Module", value: "/mobile/housekeeping" },
+      { label: "Maintenance/Technical", value: "/mobile/maintenance" },
+      { label: "Waiter/Order App", value: "/mobile/waiter" },
+      { label: "Staff Portal Mobile", value: "/mobile/employee" }
+    ]
+
+  },
+  {
     label: "Settings",
     value: "/settings",
     tabs: [

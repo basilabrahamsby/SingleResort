@@ -216,8 +216,8 @@ export default function DashboardLayout({ children }) {
     { label: "Finance", icon: <UserCircle size={18} />, to: "/account", roles: ["admin"] },
     { label: "Bookings", icon: <CalendarCheck2 size={18} />, to: "/bookings" },
     { label: "Services", icon: <ConciergeBell size={18} />, to: "/services" },
-    { label: "Role", icon: <ShieldCheck size={18} />, to: "/roles", roles: ["admin"] },
     { label: "Expenses", icon: <PiggyBank size={18} />, to: "/expenses" },
+
     {
       label: "Food Management",
       icon: <Grid size={18} />,

@@ -1790,7 +1790,7 @@ const Billing = () => {
                         {billData.charges.service_items.map((item, i) => (
                           <li key={i} className={item.is_paid ? "text-gray-400 line-through" : ""}>
                             {item.service_name} - {formatCurrency(item.charges)}
-                            {item.is_paid && <span className="ml-2 text-green-600 text-xs font-semibold no-underline">(Previously Billed)</span>}
+                            {item.is_paid && <span className="ml-2 text-green-600 text-xs font-semibold no-underline">({item.payment_status || "Paid"})</span>}
                           </li>
                         ))}
                       </ul>

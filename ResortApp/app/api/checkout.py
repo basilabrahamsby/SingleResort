@@ -2860,8 +2860,9 @@ def _calculate_bill_for_single_room(db: Session, room_number: str):
          
     all_assigned_services = svc_query.all()
     
-    # Separate unbilled and billed services
-    unbilled_services = [ass for ass in all_assigned_services if ass.billing_status == "unbilled"]
+    # Separate unbilled, paid-at-counter, and billed services
+    unbilled_services = [ass for ass in all_assigned_services if ass.billing_status in ["unbilled", "unpaid"] or ass.billing_status is None]
+    paid_services = [ass for ass in all_assigned_services if ass.billing_status == "paid"]
     billed_services = [ass for ass in all_assigned_services if ass.billing_status == "billed"]
     
     # Calculate charges: only unbilled items contribute to charges
@@ -2927,6 +2928,15 @@ def _calculate_bill_for_single_room(db: Session, room_number: str):
             "charges": ass.override_charges if ass.override_charges is not None else ass.service.charges,
             "is_paid": False,
             "payment_status": "Unpaid"
+        })
+    
+    # Add paid-at-counter services (paid when service was rendered)
+    for ass in paid_services:
+        charges.service_items.append({
+            "service_name": ass.service.name, 
+            "charges": 0.0,  # Don't add to bill - already paid
+            "is_paid": True,
+            "payment_status": "PAID (at counter)"
         })
     
     # Add billed services with zero charge (marked as paid)
@@ -3628,8 +3638,9 @@ def _calculate_bill_for_entire_booking(db: Session, room_number: str):
         AssignedService.room_id.in_(room_ids)
     ).all()
     
-    # Separate unbilled and billed services
-    unbilled_services = [ass for ass in all_assigned_services if ass.billing_status == "unbilled"]
+    # Separate unbilled, paid-at-counter, and billed services
+    unbilled_services = [ass for ass in all_assigned_services if ass.billing_status in ["unbilled", "unpaid"] or ass.billing_status is None]
+    paid_services = [ass for ass in all_assigned_services if ass.billing_status == "paid"]
     billed_services = [ass for ass in all_assigned_services if ass.billing_status == "billed"]
 
     # Calculate total food charges from the individual items (only unbilled items)
@@ -3693,10 +3704,21 @@ def _calculate_bill_for_entire_booking(db: Session, room_number: str):
             "payment_status": "Unpaid"
         })
     
+    # Add paid-at-counter services
+    for ass in paid_services:
+        charges.service_items.append({
+            "service_name": ass.service.name,
+            "charges": 0.0,
+            "is_paid": True,
+            "payment_status": "PAID (at counter)"
+        })
+    
     for ass in billed_services:
         charges.service_items.append({
             "service_name": ass.service.name,
-            "charges": 0.0
+            "charges": 0.0,
+            "is_paid": True,
+            "payment_status": "Previously Billed"
         })
 
     # Calculate Consumables and Inventory Charges from CheckoutRequests

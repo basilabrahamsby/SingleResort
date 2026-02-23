@@ -164,6 +164,36 @@ def list_employees(
 ):
     return _list_employees_impl(db, current_user, skip, limit)
 
+@router.get("/leave-policy")
+def get_leave_policy(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    policy = db.query(SystemSetting).filter(SystemSetting.key == "leave_policy").first()
+    if not policy:
+        return {
+            "paid_leave_monthly": 4,
+            "paid_leave_yearly": 48,
+            "sick_leave_monthly": 1,
+            "sick_leave_yearly": 12,
+            "long_leave_monthly": 0,
+            "long_leave_yearly": 5,
+            "wellness_leave_monthly": 0,
+            "wellness_leave_yearly": 5,
+        }
+    try:
+        return json.loads(policy.value)
+    except:
+        return {}
+
+@router.post("/leave-policy")
+def save_leave_policy(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    policy = db.query(SystemSetting).filter(SystemSetting.key == "leave_policy").first()
+    if not policy:
+        policy = SystemSetting(key="leave_policy", value=json.dumps(payload))
+        db.add(policy)
+    else:
+        policy.value = json.dumps(payload)
+    db.commit()
+    return {"message": "Policy updated successfully"}
+
 @router.get("/status-overview", response_model=EmployeeStatusOverview)
 def get_employee_status_overview(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
@@ -246,32 +276,6 @@ def get_myself(db: Session = Depends(get_db), current_user: User = Depends(get_c
             
     raise HTTPException(status_code=404, detail="No linked employee profile")
 
-@router.get("/{employee_id}")
-def get_employee(employee_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    employee = db.query(EmployeeModel).options(joinedload(EmployeeModel.user)).filter(EmployeeModel.id == employee_id).first()
-    if not employee:
-        raise HTTPException(status_code=404, detail="Employee not found")
-    
-    return {
-        "id": employee.id,
-        "name": employee.name,
-        "role": employee.role,
-        "salary": employee.salary,
-        "join_date": str(employee.join_date) if employee.join_date else None,
-        "image_url": employee.image_url,
-        "user_id": employee.user_id,
-        "paid_leave_balance": employee.paid_leave_balance,
-        "sick_leave_balance": employee.sick_leave_balance,
-        "long_leave_balance": employee.long_leave_balance,
-        "wellness_leave_balance": employee.wellness_leave_balance,
-        "user": {
-            "id": employee.user.id,
-            "email": employee.user.email,
-            "name": employee.user.name,
-            "phone": employee.user.phone,
-            "is_active": employee.user.is_active,
-        } if employee.user else None
-    }
 
 @router.put("/{employee_id}")
 def update_employee(
@@ -358,34 +362,33 @@ def delete_employee(employee_id: int, db: Session = Depends(get_db), current_use
         raise HTTPException(status_code=404, detail="Employee not found")
     return {"message": "Employee deleted successfully", "employee": deleted_employee}
 
-# Leave Management Endpoints
 
-@router.get("/leave-policy")
-def get_leave_policy(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    policy = db.query(SystemSetting).filter(SystemSetting.key == "leave_policy").first()
-    if not policy:
-        return {
-            "paid_leave_monthly": 4,
-            "paid_leave_yearly": 48,
-            "sick_leave_monthly": 1,
-            "sick_leave_yearly": 12,
-            "long_leave_monthly": 0,
-            "long_leave_yearly": 5,
-            "wellness_leave_monthly": 0,
-            "wellness_leave_yearly": 5,
-        }
-    return json.loads(policy.value)
-
-@router.post("/leave-policy")
-def save_leave_policy(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    policy = db.query(SystemSetting).filter(SystemSetting.key == "leave_policy").first()
-    if not policy:
-        policy = SystemSetting(key="leave_policy", value=json.dumps(payload))
-        db.add(policy)
-    else:
-        policy.value = json.dumps(payload)
-    db.commit()
-    return {"message": "Policy updated successfully"}
+@router.get("/{employee_id}")
+def get_employee(employee_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    employee = db.query(EmployeeModel).options(joinedload(EmployeeModel.user)).filter(EmployeeModel.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    return {
+        "id": employee.id,
+        "name": employee.name,
+        "role": employee.role,
+        "salary": employee.salary,
+        "join_date": str(employee.join_date) if employee.join_date else None,
+        "image_url": employee.image_url,
+        "user_id": employee.user_id,
+        "paid_leave_balance": employee.paid_leave_balance,
+        "sick_leave_balance": employee.sick_leave_balance,
+        "long_leave_balance": employee.long_leave_balance,
+        "wellness_leave_balance": employee.wellness_leave_balance,
+        "user": {
+            "id": employee.user.id,
+            "email": employee.user.email,
+            "name": employee.user.name,
+            "phone": employee.user.phone,
+            "is_active": employee.user.is_active,
+        } if employee.user else None
+    }
 
 @router.post("/leave", response_model=LeaveOut)
 def apply_leave(leave: LeaveCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

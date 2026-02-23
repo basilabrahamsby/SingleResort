@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from sqlalchemy import func
+
+from typing import List, Optional, Any, Dict
 from datetime import date, time, datetime, timedelta
 from pydantic import BaseModel
 import pytz
@@ -42,6 +44,18 @@ class WorkingLogCreate(BaseModel):
     check_in_time: Optional[time] = None
     check_out_time: Optional[time] = None
     location: Optional[str] = None
+
+class HolidayItem(BaseModel):
+    date: str
+    name: str
+
+class UtilizationRecord(BaseModel):
+    month: str
+    hours: float
+
+class TodayStatus(BaseModel):
+    on_leave: int
+    active_today: int
 
 class MonthlyReport(BaseModel):
     month: int
@@ -137,9 +151,6 @@ def clock_out(clock_out_data: ClockOutCreate, db: Session = Depends(get_db), cur
     db.refresh(log_to_close)
     return log_to_close
 
-@router.get("/{employee_id}", response_model=List[AttendanceRecord])
-def get_attendance_for_employee(employee_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(Attendance).filter(Attendance.employee_id == employee_id).order_by(Attendance.date.desc()).all()
 
 @router.get("/work-logs/{employee_id}", response_model=List[WorkingLogRecord])
 def get_work_logs_for_employee(employee_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -254,6 +265,7 @@ def get_monthly_report(employee_id: int, year: int, month: int, db: Session = De
         deductions = 0
     net_salary = base_salary - deductions
 
+
     return MonthlyReport(
         month=month, year=year, total_days=total_days_in_month, present_days=present_days,
         absent_days=unpaid_leaves, paid_leaves_taken=paid_leaves_taken_month, sick_leaves_taken=sick_leaves_taken_month,
@@ -262,3 +274,97 @@ def get_monthly_report(employee_id: int, year: int, month: int, db: Session = De
         sick_leave_balance=total_sick_leaves_year - sick_leaves_used_year,
         base_salary=base_salary, deductions=deductions, net_salary=net_salary
     )
+
+@router.get("/utilization/aggregate", response_model=List[UtilizationRecord])
+def get_aggregate_utilization(db: Session = Depends(get_db), current_user: Any = Depends(get_current_user)):
+    """Calculates aggregate working hours per month for the last 12 months for all staff."""
+    now = datetime.now()
+    results = []
+    for i in range(11, -1, -1):
+        # Calculate month and year correctly
+        m = (now.month - i - 1) % 12 + 1
+        y = now.year + (now.month - i - 1) // 12
+        
+        start_date = date(y, m, 1)
+        _, last_day = monthrange(y, m)
+        end_date = date(y, m, last_day)
+        
+        logs = db.query(WorkingLog).filter(
+            WorkingLog.date >= start_date,
+            WorkingLog.date <= end_date
+        ).all()
+        
+        total_month_hours = 0
+        for log in logs:
+            if log.check_in_time and log.check_out_time:
+                # Direct subtraction of time objects isn't supported, combine with dummy date
+                start_dt = datetime.combine(date.today(), log.check_in_time)
+                end_dt = datetime.combine(date.today(), log.check_out_time)
+                if end_dt > start_dt:
+                    total_month_hours += (end_dt - start_dt).total_seconds() / 3600
+        
+        results.append({
+            "month": start_date.strftime("%b"),
+            "hours": round(total_month_hours, 1)
+        })
+    return results
+
+@router.get("/holidays", response_model=List[HolidayItem])
+def get_holidays(db: Session = Depends(get_db)):
+    """Retrieves the institutional calendar (holidays) from system settings."""
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "institutional_calendar").first()
+    if not setting:
+        # Default holidays if none set
+        defaults = [
+            {"date": "DEC 25", "name": "Christmas"},
+            {"date": "JAN 01", "name": "New Year"},
+            {"date": "JAN 26", "name": "Republic Day"}
+        ]
+        return defaults
+    try:
+        data = json.loads(setting.value)
+        if isinstance(data, list):
+            # Filtering to ensure each item has the required fields
+            return [item for item in data if isinstance(item, dict) and "date" in item and "name" in item]
+        return []
+    except:
+        return []
+
+@router.post("/holidays")
+def update_holidays(holidays: List[HolidayItem], db: Session = Depends(get_db), current_user: Any = Depends(get_current_user)):
+    """Updates the institutional calendar (holidays) in system settings."""
+    setting = db.query(SystemSetting).filter(SystemSetting.key == "institutional_calendar").first()
+    holidays_data = [h.model_dump() for h in holidays]
+    if not setting:
+        setting = SystemSetting(key="institutional_calendar", value=json.dumps(holidays_data), description="Institutional Calendar Holidays")
+        db.add(setting)
+    else:
+        setting.value = json.dumps(holidays_data)
+    db.commit()
+    return {"message": "Holidays updated successfully"}
+
+@router.get("/status/today", response_model=TodayStatus)
+def get_today_status(db: Session = Depends(get_db), current_user: Any = Depends(get_current_user)):
+    """Returns the count of employees on leave and active today."""
+    today = date.today()
+    
+    # Employees on leave today
+    on_leave_count = db.query(func.count(Leave.id)).filter(
+        Leave.status == 'approved',
+        Leave.from_date <= today,
+        Leave.to_date >= today
+    ).scalar() or 0
+    
+    # Active today (have a clock-in today)
+    active_count = db.query(func.count(func.distinct(WorkingLog.employee_id))).filter(
+        WorkingLog.date == today
+    ).scalar() or 0
+    
+    return {
+        "on_leave": on_leave_count,
+        "active_today": active_count
+    }
+
+@router.get("/{employee_id}", response_model=List[AttendanceRecord])
+def get_attendance_for_employee(employee_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Attendance).filter(Attendance.employee_id == employee_id).order_by(Attendance.date.desc()).all()

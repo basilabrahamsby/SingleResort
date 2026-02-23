@@ -3,9 +3,13 @@ import { formatCurrency } from '../utils/currency';
 import DashboardLayout from "../layout/DashboardLayout";
 import api from "../services/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar as CalendarIcon, User, DollarSign, Utensils, ConciergeBell, BedDouble, Package, AlertCircle, Search, UserCheck, Briefcase, Clock, Users, ChevronLeft, ChevronRight, TrendingUp, Settings } from "lucide-react";
+import { Calendar as CalendarIcon, User, DollarSign, Utensils, ConciergeBell, BedDouble, Package, AlertCircle, Search, UserCheck, Briefcase, Clock, Users, ChevronLeft, ChevronRight, TrendingUp, Settings, ShieldCheck, Edit, Trash2 } from "lucide-react";
+
+
 import * as XLSX from "xlsx";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { Plus } from "lucide-react";
+
 import CountUp from "react-countup";
 import BannerMessage from "../components/BannerMessage";
 import EmployeeProfileModal from "../components/EmployeeProfileModal";
@@ -15,6 +19,8 @@ import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import PayrollManagement from "../components/PayrollManagement";
 import LeavePolicyManagement from "../components/LeavePolicyManagement";
+import RoleManagementTab from "../components/RoleManagementTab";
+
 
 const EmployeeOverview = () => {
   const [date, setDate] = useState(new Date());
@@ -24,7 +30,13 @@ const EmployeeOverview = () => {
   const [workLogs, setWorkLogs] = useState([]);
   const [leaves, setLeaves] = useState([]);
   const [completedTasks, setCompletedTasks] = useState([]);
+  const [utilizationData, setUtilizationData] = useState([]);
+  const [institutionalHolidays, setInstitutionalHolidays] = useState([]);
+  const [workforceStatus, setWorkforceStatus] = useState({ on_leave: 0, active_today: 0 });
+  const [profileModalId, setProfileModalId] = useState(null);
   const [loading, setLoading] = useState(false);
+
+
 
   useEffect(() => {
     api.get('/employees').then(res => {
@@ -33,7 +45,22 @@ const EmployeeOverview = () => {
         setSelectedEmployeeId(res.data[0].id);
       }
     });
+
+    // Fetch livedata for the whole organization
+    api.get('/attendance/utilization/aggregate').then(res => {
+      setUtilizationData(res.data || []);
+    });
+
+    api.get('/attendance/holidays').then(res => {
+      setInstitutionalHolidays(res.data || []);
+    });
+
+    api.get('/attendance/status/today').then(res => {
+      setWorkforceStatus(res.data || { on_leave: 0, active_today: 0 });
+    });
   }, []);
+
+
 
   useEffect(() => {
     if (selectedEmployeeId) {
@@ -66,13 +93,15 @@ const EmployeeOverview = () => {
   }, [leaves]);
 
   const timeOffActivities = useMemo(() => {
+    if (utilizationData.length > 0) return utilizationData;
     return [
-      { month: 'Jan', days: 2 }, { month: 'Feb', days: 1 }, { month: 'Mar', days: 3 },
-      { month: 'Apr', days: 1 }, { month: 'May', days: 2 }, { month: 'Jun', days: 4 },
-      { month: 'Jul', days: 3 }, { month: 'Aug', days: 2 }, { month: 'Sep', days: 5 },
-      { month: 'Oct', days: 8 }, { month: 'Nov', days: 3 }, { month: 'Dec', days: 0 }
+      { month: 'Jan', hours: 0 }, { month: 'Feb', hours: 0 }, { month: 'Mar', hours: 0 },
+      { month: 'Apr', hours: 0 }, { month: 'May', hours: 0 }, { month: 'Jun', hours: 0 },
+      { month: 'Jul', hours: 40 }, { month: 'Aug', hours: 30 }, { month: 'Sep', hours: 50 },
+      { month: 'Oct', hours: 80 }, { month: 'Nov', hours: 30 }, { month: 'Dec', hours: 0 }
     ];
-  }, []);
+  }, [utilizationData]);
+
 
   const isClockedIn = useMemo(() => {
     return workLogs.some(log => !log.check_out_time);
@@ -84,179 +113,261 @@ const EmployeeOverview = () => {
     return todayLogs.reduce((sum, log) => sum + (log.duration_hours || 0), 0);
   }, [workLogs]);
 
-  const upcomingHolidays = [
-    { date: 'DEC 25', name: 'Christmas' },
-    { date: 'JAN 01', name: 'New Year' },
-    { date: 'JAN 26', name: 'Republic Day' }
-  ];
+  const upcomingHolidays = useMemo(() => {
+    if (institutionalHolidays.length > 0) return institutionalHolidays;
+    return [
+      { date: 'DEC 25', name: 'Christmas' },
+      { date: 'JAN 01', name: 'New Year' },
+      { date: 'JAN 26', name: 'Republic Day' }
+    ];
+  }, [institutionalHolidays]);
+
 
   return (
     <div className="space-y-6">
-      {/* Employee Selector */}
-      <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-        <div className="flex items-center space-x-3">
-          <Users size={20} className="text-gray-500" />
-          <select
-            value={selectedEmployeeId}
-            onChange={(e) => setSelectedEmployeeId(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-          >
-            <option value="">Select Employee</option>
-            {employees.map(emp => (
-              <option key={emp.id} value={emp.id}>{emp.name}</option>
-            ))}
-          </select>
+      {/* Top Level KPIs - Manager focused */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+            <Users size={24} />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Workforce</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-gray-800">{employees.length}</span>
+              <span className="text-[10px] text-green-500 font-bold">+2 this month</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-green-50 flex items-center justify-center text-green-600">
+            <Clock size={24} />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Active Today</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-gray-800">
+                {workforceStatus.active_today}
+              </span>
+              <span className="text-[10px] text-gray-400">Normal operations</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-orange-50 flex items-center justify-center text-orange-600">
+            <UserCheck size={24} />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">On Leave</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-gray-800">{workforceStatus.on_leave}</span>
+              <span className="text-[10px] text-gray-400">Available: {employees.length - workforceStatus.on_leave}</span>
+            </div>
+          </div>
+        </div>
+
+
+        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
+            <DollarSign size={24} />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Payroll Est.</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-gray-800">
+                {formatCurrency(employees.reduce((acc, emp) => acc + (emp.salary || 0), 0))}
+              </span>
+              <span className="text-[10px] text-gray-400">Monthly</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500">Loading employee data...</p>
-        </div>
-      ) : (
-        <>
-          {/* Top Row - 4 Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* Time Record */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Time record</h3>
-              <div className="flex flex-col items-center justify-center py-4">
-                <div className="w-32 h-32 rounded-full border-4 border-gray-100 flex items-center justify-center bg-gray-50 mb-4">
-                  <div className="text-center">
-                    <p className="text-xs text-gray-400">{isClockedIn ? 'Clocked in' : 'Clocked out'}</p>
-                    <p className="text-lg font-bold text-gray-700">{isClockedIn ? `${todayHours.toFixed(1)}h` : 'N/A'}</p>
-                  </div>
-                </div>
-                <div className="w-full space-y-3">
-                  <div className="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
-                    <span className="text-sm text-gray-600">Location</span>
-                    <span className="text-sm font-medium">Office</span>
-                  </div>
-                  <button className="w-full bg-gray-100 text-gray-400 py-2 rounded-lg cursor-not-allowed">Clock In</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Attendance Calendar */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-semibold text-gray-700">Attendance</h3>
-                <span className="text-xs text-gray-500">{currentMonth.toLocaleDateString('en-US', { month: '2-digit', year: 'numeric' })}</span>
-              </div>
-              <Calendar
-                value={date}
-                onChange={setDate}
-                className="border-none w-full text-xs"
-                tileClassName={({ date, view }) => {
-                  if (view === 'month') {
-                    const dateStr = date.toISOString().split('T')[0];
-                    const hasWork = workLogs.some(log => log.date === dateStr && log.duration_hours >= 4);
-                    if (hasWork) return 'bg-green-100 text-green-800 font-bold rounded-full';
-                  }
-                  return null;
-                }}
-                formatShortWeekday={(locale, date) => ['S', 'M', 'T', 'W', 'T', 'F', 'S'][date.getDay()]}
-              />
-            </div>
-
-            {/* Leave Balance */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Total leave balance</h3>
-              <div className="flex flex-col items-center justify-center h-48">
-                <div className="relative w-32 h-32">
-                  <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
-                    <path className="text-gray-200" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />
-                    <path className="text-red-500" strokeDasharray={`${(leaveBalance / 20) * 100}, 100`} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-3xl font-bold">{leaveBalance}</span>
-                  </div>
-                </div>
-                <button className="mt-4 text-orange-500 text-sm hover:underline">See more</button>
-              </div>
-            </div>
-
-            {/* Timesheet */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-semibold text-gray-700">Timesheet</h3>
-              </div>
-              <div className="flex items-center justify-between mb-3">
-                <button className="text-gray-400 hover:text-gray-600"><ChevronLeft size={20} /></button>
-                <span className="text-sm font-medium">Tue, Nov 26</span>
-                <button className="text-gray-400 hover:text-gray-600"><ChevronRight size={20} /></button>
-              </div>
-              <div className="space-y-2 text-xs text-gray-500">
-                {['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM'].map((time, i) => (
-                  <div key={i} className="py-1 border-b border-gray-100">{time}</div>
+      {/* Main Analysis Section */}
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Left Control Panel */}
+        <div className="lg:w-1/3 space-y-6">
+          {/* Employee Focus Card */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-gray-800">Personal Insight</h3>
+              <select
+                value={selectedEmployeeId}
+                onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                className="text-sm border-none bg-gray-50 rounded-lg px-2 py-1 font-semibold text-orange-600 focus:ring-0 cursor-pointer"
+              >
+                {employees.map(emp => (
+                  <option key={emp.id} value={emp.id}>{emp.name}</option>
                 ))}
+              </select>
+            </div>
+
+            {/* Micro Profile Widget */}
+            <div className="flex items-center gap-4 mb-6 p-4 bg-orange-50 rounded-xl">
+              <div className="w-12 h-12 rounded-full overflow-hidden bg-orange-200 border-2 border-white shadow-sm flex items-center justify-center">
+                <User className="text-orange-600" size={24} />
+              </div>
+              <div>
+                <p className="font-bold text-gray-900 leading-tight">
+                  {employees.find(e => e.id == selectedEmployeeId)?.name || 'Select Staff'}
+                </p>
+                <p className="text-[10px] text-orange-600 font-bold uppercase tracking-widest">
+                  {employees.find(e => e.id == selectedEmployeeId)?.designation || 'Operational Staff'}
+                </p>
               </div>
             </div>
+
+            {/* Mini Stat Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <p className="text-[10px] text-gray-400 font-bold uppercase">Leave Balance</p>
+                <p className="text-xl font-black text-gray-800">{leaveBalance}d</p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <p className="text-[10px] text-gray-400 font-bold uppercase">Today Hours</p>
+                <p className="text-xl font-black text-gray-800">{todayHours.toFixed(1)}h</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setProfileModalId(selectedEmployeeId)}
+              className="w-full mt-6 py-3 bg-gray-900 text-white text-xs font-bold rounded-xl hover:bg-black transition-all shadow-lg active:scale-95"
+            >
+              View Full Dossier
+            </button>
           </div>
 
-          {/* Bottom Row - 3 Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Holidays */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">List of holidays</h3>
+          {/* Time Management View */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h3 className="font-bold text-gray-800 mb-4">Availability Log</h3>
+            <Calendar
+              value={date}
+              onChange={setDate}
+              className="border-none w-full text-sm custom-calendar-mini"
+              tileClassName={({ date, view }) => {
+                if (view === 'month') {
+                  const dateStr = date.toISOString().split('T')[0];
+                  const hasWork = workLogs.some(log => log.date === dateStr && log.duration_hours >= 4);
+                  if (hasWork) return 'present-day';
+                }
+                return null;
+              }}
+            />
+            <style>{`
+              .custom-calendar-mini { width: 100% !important; background: transparent !important; }
+              .custom-calendar-mini button { padding: 10px !important; font-size: 11px !important; border-radius: 8px !important; }
+              .present-day { background: #dcfce7 !important; color: #166534 !important; font-weight: 900 !important; }
+              .react-calendar__tile--now { background: #fff7ed !important; color: #ea580c !important; border: 1px solid #ffedd5 !important; }
+              .react-calendar__tile--active { background: #f97316 !important; color: white !important; }
+            `}</style>
+          </div>
+        </div>
+
+        {/* Right Detail Panel */}
+        <div className="flex-1 space-y-6">
+          {/* Analysis Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Productivity Chart */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="font-bold text-gray-800">Time Utilization</h3>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase">Activity Level</span>
+                </div>
+              </div>
+              <div className="flex-1 min-h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={timeOffActivities}>
+                    <XAxis dataKey="month" hide />
+                    <Tooltip
+                      labelStyle={{ fontWeight: 'bold', color: '#1f2937' }}
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                      formatter={(value) => [`${value} Hours`, 'Utilization']}
+                    />
+                    <Bar
+                      dataKey={timeOffActivities[0]?.hours !== undefined ? "hours" : "days"}
+                      radius={[6, 6, 6, 6]}
+                      minPointSize={4}
+                    >
+                      {timeOffActivities.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#3b82f6' : '#bfdbfe'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Upcoming Logistics */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+              <h3 className="font-bold text-gray-800 mb-6 uppercase text-[10px] tracking-widest text-gray-400">Institutional Calendar</h3>
               <div className="space-y-4">
                 {upcomingHolidays.map((holiday, i) => (
-                  <div key={i} className="flex items-center space-x-4">
-                    <div className="text-center">
-                      <p className="text-xs text-gray-500">{holiday.date.split(' ')[0]}</p>
-                      <p className="text-2xl font-bold text-orange-500">{holiday.date.split(' ')[1]}</p>
+                  <div key={i} className="flex items-center gap-4 group p-3 hover:bg-gray-50 rounded-xl transition-all cursor-default">
+                    <div className="flex flex-col items-center justify-center w-12 h-14 bg-orange-50 rounded-xl group-hover:bg-orange-100 transition-colors px-1">
+                      <span className="text-[8px] font-black text-orange-400 uppercase leading-none text-center">
+                        {holiday.date.split(' ')[0]}
+                      </span>
+                      <span className="text-lg font-black text-orange-600 leading-tight">
+                        {holiday.date.split(' ')[1] || ''}
+                      </span>
                     </div>
                     <div className="flex-1">
-                      <p className="text-xs text-gray-500">Thu</p>
-                      <p className="text-sm font-medium">{holiday.name}</p>
+                      <p className="text-xs font-black text-gray-800">{holiday.name}</p>
+                      <p className="text-[10px] text-gray-400 font-bold">Resort Holiday</p>
                     </div>
+                    <CalendarIcon size={16} className="text-gray-300 group-hover:text-orange-400 transition-colors" />
                   </div>
                 ))}
               </div>
             </div>
+          </div>
 
-            {/* Tasks Completed by Employee */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Tasks Completed by Employee</h3>
-              <div className="space-y-4">
-                {completedTasks.length > 0 ? completedTasks.map((task) => (
-                  <div key={task.id} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <div>
-                        <p className="text-sm font-medium">{task.type}</p>
-                        <p className="text-xs text-gray-500">{task.location}</p>
-                      </div>
-                    </div>
-                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">{task.status}</span>
-                  </div>
-                )) : (
-                  <p className="text-sm text-gray-400 text-center py-4">No completed tasks yet</p>
-                )}
-              </div>
+          {/* Activity/Task Integrity */}
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-gray-800">Staff Contribution Trace</h3>
+              <button className="text-[10px] font-black text-blue-600 uppercase tracking-widest hover:underline">Full Log</button>
             </div>
-
-            {/* Time Off Activities */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Time off activities</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={timeOffActivities}>
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Bar dataKey="days" radius={[4, 4, 0, 0]}>
-                    {timeOffActivities.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.days > 5 ? '#3b82f6' : entry.days > 2 ? '#10b981' : '#6b7280'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {completedTasks.length > 0 ? completedTasks.map((task) => (
+                <div key={task.id} className="flex items-center justify-between p-4 bg-gray-50 border border-gray-100 rounded-xl hover:border-blue-200 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center text-blue-500 shadow-sm border border-gray-100">
+                      <Briefcase size={20} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-gray-800 leading-tight">{task.type}</p>
+                      <p className="text-[10px] text-gray-400 font-bold">{task.location}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="px-2 py-1 bg-green-100 text-green-700 text-[10px] font-black rounded uppercase mb-1">Success</div>
+                    <p className="text-[9px] text-gray-400 font-bold">{formatDateTimeIST(task.completedAt).split(',')[1]}</p>
+                  </div>
+                </div>
+              )) : (
+                <div className="col-span-2 text-center py-8 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-100">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">No recent task activity</p>
+                </div>
+              )}
             </div>
           </div>
-        </>
+        </div>
+      </div>
+      {profileModalId && (
+        <EmployeeProfileModal
+          employeeId={profileModalId}
+          onClose={() => setProfileModalId(null)}
+        />
       )}
     </div>
   );
+
 };
 
 const UserHistory = () => {
@@ -1295,188 +1406,225 @@ const EmployeeListAndForm = () => {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        {kpiData.map((kpi, idx) => (
-          <div key={idx} className="relative bg-white p-5 rounded-xl shadow cursor-pointer hover:shadow-xl transition" onMouseEnter={() => setHoveredKPI(idx)} onMouseLeave={() => setHoveredKPI(null)}>
-            <div className="flex flex-col items-center">
-              <span className="text-gray-500">{kpi.label}</span>
-              <span className="text-2xl font-bold" style={{ color: kpi.color }}><CountUp end={kpi.value} duration={1.5} /></span>
+      {/* Directory Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-gradient-to-br from-indigo-600 to-blue-700 p-6 rounded-2xl shadow-lg text-white">
+          <p className="text-xs font-black uppercase tracking-widest opacity-80 mb-1">Onboarded Talent</p>
+          <div className="flex items-center justify-between">
+            <h4 className="text-4xl font-black">{employees.length}</h4>
+            <div className="p-3 bg-white/20 rounded-xl backdrop-blur-md">
+              <Users size={24} />
             </div>
-            {hoveredKPI === idx && (
-              <div className="absolute inset-0 bg-white bg-opacity-95 flex items-center justify-center rounded-xl p-2 shadow-lg">
-                <ResponsiveContainer width="100%" height={50}>
-                  <LineChart data={kpi.trend.map((v, i) => ({ day: i + 1, value: v }))}>
-                    <Line type="monotone" dataKey="value" stroke={kpi.color} strokeWidth={2} dot={false} />
-                    <Tooltip contentStyle={{ fontSize: 12 }} formatter={(val) => [`₹${val}`, "Salary"]} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
           </div>
-        ))}
-      </div>
+          <p className="text-[10px] mt-4 font-bold border-t border-white/10 pt-3">
+            {employees.filter(e => e.is_active).length} Active | {employees.filter(e => !e.is_active).length} Inactive
+          </p>
+        </div>
 
-      <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl shadow mb-8 max-w-4xl mx-auto flex gap-6" encType="multipart/form-data">
-        <div className="flex-1">
-          <h2 className="text-xl font-semibold mb-4">{editId ? "Edit" : "Create"} Employee</h2>
-          <div className="grid grid-cols-1 gap-4">
-            <label className="text-sm text-gray-600 mb-1">Name <span className="text-red-500">*</span></label>
-            <input name="name" value={form.name} onChange={handleFormChange} placeholder="Name" className="border px-3 py-2 rounded w-full" required />
-            <label className="text-sm text-gray-600 mb-1">Role <span className="text-red-500">*</span></label>
-            <select name="role" value={form.role} onChange={handleFormChange} className="border px-3 py-2 rounded w-full" required>
-              <option value="">Select Role</option>
-              {roles.map((role) => (<option key={role.id} value={role.name}>{role.name}</option>))}
-            </select>
-            <label className="text-sm text-gray-600 mb-1">Salary <span className="text-red-500">*</span></label>
-            <input name="salary" type="number" value={form.salary} onChange={handleFormChange} placeholder="Salary" className="border px-3 py-2 rounded w-full" required />
-            <label className="text-sm text-gray-600 mb-1">Joining Date <span className="text-red-500">*</span></label>
-            <input type="date" name="join_date" value={form.join_date} onChange={handleFormChange} className="border px-3 py-2 rounded w-full" required />
-            <label className="text-sm text-gray-600 mb-1">Email <span className="text-red-500">*</span></label>
-            <input name="email" type="email" value={form.email} onChange={handleFormChange} placeholder="Email" className="border px-3 py-2 rounded w-full" required />
-            <label className="text-sm text-gray-600 mb-1">Phone</label>
-            <input name="phone" type="tel" value={form.phone} onChange={handleFormChange} placeholder="Phone (optional)" className="border px-3 py-2 rounded w-full" />
-            <label className="text-sm text-gray-600 mb-1">
-              Password {editId ? "(Leave blank to keep current)" : <span className="text-red-500">*</span>}
-            </label>
-            <input name="password" type="password" value={form.password} onChange={handleFormChange} placeholder={editId ? "New password (optional)" : "Password"} className="border px-3 py-2 rounded w-full" required={!editId} />
-            {editId && (
-              <>
-                <label className="text-sm text-gray-600 mb-1">Status</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    name="is_active"
-                    checked={form.is_active !== undefined ? form.is_active : true}
-                    onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                    className="w-5 h-5"
-                  />
-                  <span className="text-sm">{form.is_active ? 'Active' : 'Inactive'}</span>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Financial Commitment</p>
+          <h4 className="text-3xl font-black text-gray-800">
+            {formatCurrency(employees.reduce((acc, e) => acc + (e.salary || 0), 0))}
+          </h4>
+          <p className="text-[10px] mt-4 font-bold text-gray-400">Total Monthly Salary Burden</p>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Operational Capacity</p>
+            <div className="flex -space-x-2 mt-2">
+              {employees.slice(0, 5).map((e, i) => (
+                <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-gray-200 flex items-center justify-center text-[10px] font-black overflow-hidden shadow-sm">
+                  {e.image_url ? <img src={`${mediaBaseUrl}/${e.image_url}`} className="w-full h-full object-cover" /> : e.name.charAt(0)}
                 </div>
-              </>
-            )}
-            <label className="text-sm text-gray-600 mb-1">Image</label>
-            <input type="file" name="image" accept="image/*" onChange={handleFormChange} className="w-full" />
-            <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">{editId ? "Update" : "Create"}</button>
+              ))}
+              {employees.length > 5 && (
+                <div className="w-8 h-8 rounded-full border-2 border-white bg-gray-900 text-white flex items-center justify-center text-[10px] font-black shadow-sm">
+                  +{employees.length - 5}
+                </div>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => { setEditId(null); resetForm(); }}
+            className="w-full mt-4 py-2 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-100"
+          >
+            Onboard New Staff
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        {/* Form Panel */}
+        <div className="xl:col-span-1">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 sticky top-6">
+            <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+              <div className="w-2 h-6 bg-orange-500 rounded-full"></div>
+              {editId ? "Update Staff Dossier" : "New Staff Onboarding"}
+            </h3>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="flex justify-center mb-6">
+                <div className="relative group">
+                  <div className="w-24 h-24 rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden transition-all group-hover:border-orange-400 cursor-pointer">
+                    {previewImage ? (
+                      <img src={previewImage} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="text-center p-2 text-gray-400">
+                        <User size={24} className="mx-auto mb-1" />
+                        <p className="text-[8px] font-black uppercase">Upload Photo</p>
+                      </div>
+                    )}
+                    <input type="file" name="image" accept="image/*" onChange={handleFormChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Identity & Title</p>
+                  <input name="name" value={form.name} onChange={handleFormChange} placeholder="Full Legal Name" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all" required />
+                  <select name="role" value={form.role} onChange={handleFormChange} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all mt-2" required>
+                    <option value="">Assigned Role / Department</option>
+                    {roles.map((role) => (<option key={role.id} value={role.name}>{role.name}</option>))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Logistics & Start</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input name="salary" type="number" value={form.salary} onChange={handleFormChange} placeholder="Salary (₹)" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all" required />
+                    <input type="date" name="join_date" value={form.join_date} onChange={handleFormChange} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all" required />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Contact & Credentials</p>
+                  <input name="email" type="email" value={form.email} onChange={handleFormChange} placeholder="Corporate Email" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all" required />
+                  <input name="phone" type="tel" value={form.phone} onChange={handleFormChange} placeholder="Phone Number" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all mt-2" />
+                  <input name="password" type="password" value={form.password} onChange={handleFormChange} placeholder={editId ? "Overwrite Password (Optional)" : "System Password"} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all mt-2" required={!editId} />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <button type="submit" className="flex-1 py-3 bg-gray-900 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-black transition-all shadow-xl active:scale-95">
+                  {editId ? "Confirm Updates" : "Register Employee"}
+                </button>
+                {editId && (
+                  <button type="button" onClick={resetForm} className="px-6 py-3 bg-gray-100 text-gray-600 text-xs font-black uppercase tracking-widest rounded-xl hover:bg-gray-200 transition-all">
+                    Discard
+                  </button>
+                )}
+              </div>
+            </form>
           </div>
         </div>
-        <div className="flex items-center justify-center w-48 h-48 border rounded">
-          {previewImage ? <img src={previewImage} alt="Preview" className="w-full h-full object-cover rounded" /> : <span className="text-gray-400">Image Preview</span>}
-        </div>
-      </form>
 
-      <div className="mb-4 flex flex-wrap gap-4 justify-between items-center">
-        <input type="number" placeholder="Min Salary" value={salaryFilter} onChange={(e) => setSalaryFilter(e.target.value)} className="border px-3 py-2 rounded" />
-        <button onClick={exportToExcel} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Export to Excel</button>
-      </div>
+        {/* Directory List Panel */}
+        <div className="xl:col-span-2 space-y-4">
+          <div className="bg-white p-4 items-center rounded-2xl shadow-sm border border-gray-100 flex justify-between">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="number"
+                placeholder="Filter by Minimum Salary Presence..."
+                value={salaryFilter}
+                onChange={(e) => setSalaryFilter(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-50 border-none rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button onClick={exportToExcel} className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 text-[10px] font-black uppercase tracking-widest rounded-xl border border-green-100 hover:bg-green-100 transition-all">
+              <Package size={14} /> Export Workforce Data
+            </button>
+          </div>
 
-      <div className="bg-white p-4 sm:p-6 rounded-xl sm:rounded-2xl shadow overflow-x-auto">
-        <table className="w-full text-sm border-collapse border border-gray-200">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="p-2 sm:p-3 border text-xs sm:text-sm">#</th>
-              <th className="p-2 sm:p-3 border text-xs sm:text-sm">Image</th>
-              <th className="p-2 sm:p-3 border text-xs sm:text-sm">Name</th>
-              <th className="p-2 sm:p-3 border text-xs sm:text-sm">Role</th>
-              <th className="p-2 sm:p-3 border text-xs sm:text-sm">Salary</th>
-              <th className="p-2 sm:p-3 border text-xs sm:text-sm">Join Date</th>
-              <th className="p-2 sm:p-3 border text-xs sm:text-sm">Status</th>
-              <th className="p-2 sm:p-3 border text-xs sm:text-sm">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredEmployees.map((emp, i) => (
-              <tr key={emp.id} className="hover:bg-gray-50">
-                <td className="p-1 sm:p-2 border text-center text-xs sm:text-sm">{i + 1}</td>
-                <td className="p-1 sm:p-2 border">
-                  {emp.image_url ? (
-                    <img
-                      src={`${mediaBaseUrl}/${emp.image_url.startsWith('/') ? emp.image_url.substring(1) : emp.image_url}`}
-                      alt="Profile"
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-gray-400 text-xs sm:text-sm">No image</span>
-                  )}
-                </td>
-                <td className="p-1 sm:p-2 border text-xs sm:text-sm">
-                  <div className="flex flex-col sm:flex-row sm:items-center">
-                    <span className="truncate">{emp.name}</span>
-                    {!emp.has_employee_record && (emp.role?.toLowerCase() === 'admin' || emp.role?.toLowerCase() === 'manager') && (
-                      <span className="text-xs bg-blue-100 text-blue-800 px-1 sm:px-2 py-0.5 sm:py-1 rounded mt-1 sm:mt-0 sm:ml-2">Admin</span>
-                    )}
-                  </div>
-                </td>
-                <td className="p-1 sm:p-2 border text-xs sm:text-sm">{emp.role}</td>
-                <td className="p-1 sm:p-2 border text-right text-xs sm:text-sm">{emp.salary ? `₹${emp.salary}` : 'N/A'}</td>
-                <td className="p-1 sm:p-2 border text-xs sm:text-sm">{emp.join_date || 'N/A'}</td>
-                <td className="p-1 sm:p-2 border text-xs sm:text-sm">
-                  {emp.has_employee_record ? (
-                    <span className={`px-2 py-1 rounded text-xs ${emp.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {emp.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  ) : (
-                    <span className="text-gray-500 text-xs">-</span>
-                  )}
-                </td>
-                <td className="p-1 sm:p-2 border">
-                  <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
-                    {emp.has_employee_record ? (
-                      <>
-                        <button
-                          className="bg-indigo-500 text-white px-1 sm:px-2 py-1 text-xs sm:text-sm rounded hover:bg-indigo-600"
-                          onClick={() => setSelectedEmployeeId(emp.id)}
-                        >
-                          View Profile
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Employee Dossier</th>
+                  <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Role & Compensation</th>
+                  <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Logistics</th>
+                  <th className="px-6 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Management</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredEmployees.map((emp) => (
+                  <tr key={emp.id} className="hover:bg-gray-50/50 transition-colors group">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-gray-100 overflow-hidden border border-gray-200 flex items-center justify-center">
+                          {emp.image_url ? (
+                            <img src={`${mediaBaseUrl}/${emp.image_url}`} className="w-full h-full object-cover" />
+                          ) : (
+                            <User className="text-gray-300" size={20} />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900 leading-tight flex items-center gap-2">
+                            {emp.name}
+                            {!emp.has_employee_record && <span className="text-[8px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-black uppercase">System</span>}
+                          </p>
+                          <p className="text-[10px] text-gray-400 font-bold">{emp.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Briefcase size={12} className="text-orange-500" />
+                          <span className="text-xs font-bold text-gray-700">{emp.role}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <DollarSign size={12} className="text-green-500" />
+                          <span className="text-xs font-black text-gray-900">{emp.salary ? formatCurrency(emp.salary) : 'Not Disclosed'}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-gray-400 font-bold flex items-center gap-2">
+                          <Clock size={12} /> Joined: {emp.join_date || 'N/A'}
+                        </p>
+                        <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${emp.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${emp.is_active ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                          {emp.is_active ? 'In Good Standing' : 'Inactive / Blocked'}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleEdit(emp)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Review Dossier">
+                          <Edit size={16} />
                         </button>
-                        <button
-                          className="bg-blue-500 text-white px-1 sm:px-2 py-1 text-xs sm:text-sm rounded"
-                          onClick={() => handleEdit(emp)}
-                        >
-                          Edit
+                        <button onClick={() => handleToggleActive(emp)} className={`p-2 rounded-lg transition-all ${emp.is_active ? 'text-gray-400 hover:text-orange-600 hover:bg-orange-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`} title={emp.is_active ? "Suspend Access" : "Restore Access"}>
+                          <AlertCircle size={16} />
                         </button>
-                        <button
-                          className={`px-1 sm:px-2 py-1 text-xs sm:text-sm rounded ${emp.is_active ? 'bg-yellow-500' : 'bg-green-500'} text-white`}
-                          onClick={() => handleToggleActive(emp)}
-                        >
-                          {emp.is_active ? 'Deactivate' : 'Activate'}
+                        <button onClick={() => handleDelete(emp.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Purge Record">
+                          <Trash2 size={16} />
                         </button>
-                        <button
-                          className="bg-red-500 text-white px-1 sm:px-2 py-1 text-xs sm:text-sm rounded"
-                          onClick={() => handleDelete(emp.id)}
-                        >
-                          Delete
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-gray-500 text-xs sm:text-sm">Admin User</span>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filteredEmployees.length === 0 && (
-              <tr>
-                <td colSpan="8" className="text-center py-4 text-gray-500 text-sm sm:text-base">
-                  No employees found.
-                </td>
-              </tr>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="text-center py-4">
+            {hasMore && (
+              <button
+                onClick={loadMoreEmployees}
+                disabled={isFetchingMore}
+                className="px-8 py-3 bg-white border border-gray-100 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-400 hover:bg-gray-50 hover:text-gray-800 transition-all shadow-sm disabled:opacity-50"
+              >
+                {isFetchingMore ? "Synchronizing..." : "Load More Records"}
+              </button>
             )}
-          </tbody>
-          {hasMore && filteredEmployees.length > 0 && (
-            <tfoot>
-              <tr>
-                <td colSpan="8" className="text-center p-4">
-                  <button onClick={loadMoreEmployees} disabled={isFetchingMore} className="bg-indigo-100 text-indigo-700 font-semibold px-6 py-2 rounded-lg hover:bg-indigo-200 transition-colors disabled:bg-gray-200 disabled:text-gray-500">
-                    {isFetchingMore ? "Loading..." : "Load More"}
-                  </button>
-                </td>
-              </tr>
-            </tfoot>
-          )}
-        </table>
+          </div>
+        </div>
       </div>
 
-      {/* Employee Profile Modal */}
       {selectedEmployeeId && (
         <EmployeeProfileModal
           employeeId={selectedEmployeeId}
@@ -1487,8 +1635,144 @@ const EmployeeListAndForm = () => {
   );
 };
 
+const HolidayManagement = () => {
+  const [holidays, setHolidays] = useState([]);
+  const [newHoliday, setNewHoliday] = useState({ date: '', name: '' });
+  const [loading, setLoading] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+
+  useEffect(() => {
+    fetchHolidays();
+  }, []);
+
+  const fetchHolidays = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/attendance/holidays');
+      setHolidays(res.data || []);
+    } catch (err) {
+      console.error("Failed to fetch holidays:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdd = async () => {
+    if (!newHoliday.date || !newHoliday.name) return;
+    const updated = [...holidays, newHoliday];
+    try {
+      await api.post('/attendance/holidays', updated);
+      setHolidays(updated);
+      setNewHoliday({ date: '', name: '' });
+    } catch (err) {
+      alert("Failed to save holiday");
+    }
+  };
+
+  const handleDateChange = (date) => {
+    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const mmm = months[date.getMonth()];
+    const dd = String(date.getDate()).padStart(2, '0');
+    setNewHoliday({ ...newHoliday, date: `${mmm} ${dd}` });
+    setShowCalendar(false);
+  };
+
+  const handleDelete = async (index) => {
+    const updated = holidays.filter((_, i) => i !== index);
+    try {
+      await api.post('/attendance/holidays', updated);
+      setHolidays(updated);
+    } catch (err) {
+      alert("Failed to delete holiday");
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100">
+        <h2 className="text-2xl font-black text-gray-900 mb-2">Institutional Calendar</h2>
+        <p className="text-sm text-gray-400 font-medium mb-8">Manage official resort holidays and institutional events.</p>
+
+        <div className="flex gap-4 mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-100">
+          <div className="flex-1">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 ml-1">Date (e.g. DEC 25)</label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="MMM DD"
+                value={newHoliday.date}
+                readOnly
+                onClick={() => setShowCalendar(!showCalendar)}
+                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all font-bold text-gray-800 cursor-pointer"
+              />
+              {showCalendar && (
+                <div className="absolute top-full left-0 z-50 mt-2 bg-white p-4 rounded-2xl shadow-2xl border border-gray-100 min-w-[300px]">
+                  <Calendar
+                    onChange={handleDateChange}
+                    className="border-none font-sans"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex-[2]">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 ml-1">Holiday Name</label>
+            <input
+              type="text"
+              placeholder="e.g. Independence Day"
+              value={newHoliday.name}
+              onChange={(e) => setNewHoliday({ ...newHoliday, name: e.target.value })}
+              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none transition-all font-bold text-gray-800"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={handleAdd}
+              disabled={!newHoliday.date || !newHoliday.name}
+              className="h-[50px] px-8 bg-gray-900 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-black transition-all disabled:opacity-50 shadow-lg active:scale-95"
+            >
+              <Plus size={18} />
+              <span>Add Holiday</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {holidays.map((h, i) => (
+            <div key={i} className="flex items-center gap-4 p-4 bg-white border border-gray-100 rounded-2xl hover:border-orange-200 transition-all group shadow-sm hover:shadow-md">
+              <div className="flex flex-col items-center justify-center w-14 h-16 bg-orange-50 rounded-xl border border-orange-100">
+                <span className="text-[10px] font-black text-orange-400 uppercase leading-none">{h.date.split(' ')[0]}</span>
+                <span className="text-xl font-black text-orange-600 leading-none">{h.date.split(' ')[1] || ''}</span>
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-gray-800">{h.name}</p>
+                <div className="flex items-center gap-1 mt-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-orange-400"></div>
+                  <p className="text-[8px] text-gray-400 font-black uppercase tracking-widest">Official Policy</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleDelete(i)}
+                className="p-3 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl opacity-0 group-hover:opacity-100 transition-all"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          ))}
+          {holidays.length === 0 && !loading && (
+            <div className="col-span-full py-12 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+              <p className="text-gray-400 font-bold">No holidays configured yet.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 const EmployeeManagement = () => {
-  const [activeTab, setActiveTab] = useState('overview'); // Changed default to overview
+  const [activeTab, setActiveTab] = useState('overview');
 
   const renderContent = () => {
     switch (activeTab) {
@@ -1501,6 +1785,8 @@ const EmployeeManagement = () => {
       case 'monthly-report': return <MonthlyReport />;
       case 'status-overview': return <StatusOverview />;
       case 'leave-policy': return <LeavePolicyManagement />;
+      case 'roles': return <RoleManagementTab />;
+      case 'holidays': return <HolidayManagement />;
       default: return null;
     }
   };
@@ -1521,25 +1807,35 @@ const EmployeeManagement = () => {
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900">Employee Management</h1>
         </div>
 
-        {/* Tab Navigation - BlazeUp Style */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-1 inline-flex flex-wrap gap-1">
-          <TabButton id="overview" label="Overview" icon={<TrendingUp size={18} />} />
-          <TabButton id="manage-employees" label="Directory" icon={<Users size={18} />} />
-          <TabButton id="payroll" label="Payroll" icon={<DollarSign size={18} />} />
-          <TabButton id="attendance" label="Attendance" icon={<Clock size={18} />} />
-          <TabButton id="leave" label="Leave" icon={<UserCheck size={18} />} />
-          <TabButton id="monthly-report" label="Reports" icon={<CalendarIcon size={18} />} />
-          <TabButton id="status-overview" label="Status" icon={<Briefcase size={18} />} />
-          <TabButton id="leave-policy" label="Policy" icon={<Settings size={18} />} />
-          <TabButton id="report" label="Activity" icon={<Search size={18} />} />
+        <div className="flex flex-wrap gap-6 items-start">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-1.5 flex flex-wrap gap-1">
+            <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider w-full mb-1">General</div>
+            <TabButton id="overview" label="Overview" icon={<TrendingUp size={18} />} />
+            <TabButton id="manage-employees" label="Directory" icon={<Users size={18} />} />
+            <TabButton id="report" label="Activity Tracking" icon={<Search size={18} />} />
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-1.5 flex flex-wrap gap-1">
+            <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider w-full mb-1">Operations</div>
+            <TabButton id="attendance" label="Attendance" icon={<Clock size={18} />} />
+            <TabButton id="leave" label="Leave Mgt" icon={<UserCheck size={18} />} />
+            <TabButton id="payroll" label="Payroll" icon={<DollarSign size={18} />} />
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-1.5 flex flex-wrap gap-1">
+            <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider w-full mb-1">Configuration</div>
+            <TabButton id="roles" label="Permissions" icon={<ShieldCheck size={18} />} />
+            <TabButton id="leave-policy" label="Policy" icon={<Settings size={18} />} />
+            <TabButton id="holidays" label="Holidays" icon={<CalendarIcon size={18} />} />
+            <TabButton id="monthly-report" label="Reports" icon={<CalendarIcon size={18} />} />
+            <TabButton id="status-overview" label="Org Status" icon={<Briefcase size={18} />} />
+          </div>
         </div>
 
-        {/* Content Area */}
         <div>
           {renderContent()}
         </div>

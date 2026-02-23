@@ -5,7 +5,7 @@ import { NotificationProvider } from "./contexts/NotificationContext";
 import Login from "./pages/Login.jsx";
 import { ProtectedRoute } from "./layout/DashboardLayout";
 import Dashboard from "./pages/Dashboard.jsx";
-import RoleForm from "./pages/Roleform.jsx";
+
 import Bookings from "./pages/Bookings.jsx";
 import CreateRooms from "./pages/CreateRooms.jsx";
 import Users from "./pages/Users.jsx";
@@ -99,12 +99,9 @@ function App() {
           {/* Protected Routes */}
           <Route
             path="/roles"
-            element={
-              <ProtectedRoute requiredPermission="/roles">
-                <RoleForm />
-              </ProtectedRoute>
-            }
+            element={<Navigate to="/employee-management" replace />}
           />
+
           <Route
             path="/billing"
             element={
