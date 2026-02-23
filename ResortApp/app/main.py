@@ -214,7 +214,7 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
             path = str(request.url.path)
             print(f"[DEBUG-PERF] Path: {path}") # Add debug print
             # Disable cache for critical real-time endpoints
-            if any(p in path for p in ["/bill", "/active-rooms", "/bookings", "/checkout"]):
+            if any(p in path for p in ["/bill/active-rooms", "/active-rooms", "/bookings", "/checkout"]):
                  response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
                  print(f"[DEBUG-PERF] Disabled Cache for: {path}")
             # Cache static/semi-static endpoints longer

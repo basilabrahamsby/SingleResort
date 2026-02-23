@@ -334,19 +334,24 @@ def update_service_request(db: Session, request_id: int, update_data: ServiceReq
                     acting_user_id = acting_emp.user_id
 
             # If this is a delivery request with a food order, update the food order status
-            if request.food_order_id and is_completing:
+            if request.food_order_id:
                 food_order = db.query(FoodOrder).filter(FoodOrder.id == request.food_order_id).first()
                 if food_order:
-                    # Mark food order as completed
-                    food_order.status = "completed"
-                    
-                    # Use billing_status from update_data if provided, otherwise default to unpaid
-                    if update_data.billing_status:
-                        food_order.billing_status = update_data.billing_status
-                    elif food_order.billing_status != "paid":
-                        food_order.billing_status = "unpaid"
-                    
-                    print(f"[INFO] Food order {food_order.id} marked as completed (billing: {food_order.billing_status}) due to delivery service completion")
+                    if is_completing:
+                        # Mark food order as completed
+                        food_order.status = "completed"
+                        
+                        # Use billing_status from update_data if provided, otherwise default to unpaid
+                        if update_data.billing_status:
+                            food_order.billing_status = update_data.billing_status
+                        elif food_order.billing_status != "paid":
+                            food_order.billing_status = "unpaid"
+                        
+                        print(f"[INFO] Food order {food_order.id} marked as completed (billing: {food_order.billing_status}) due to delivery service completion")
+                    elif update_data.status == "cancelled":
+                        # Mark food order as cancelled
+                        food_order.status = "cancelled"
+                        print(f"[INFO] Food order {food_order.id} marked as cancelled due to delivery service cancellation")
 
             # NEW: Handle Inventory Movement for 'return_items' completion
             if request.request_type == "return_items" and is_completing:

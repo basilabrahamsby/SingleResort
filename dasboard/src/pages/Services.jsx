@@ -3829,6 +3829,19 @@ const Services = () => {
                                       >
                                         <LayoutDashboard size={14} />
                                       </button>
+                                      {['pending', 'in_progress', 'scheduled'].includes((request.status || "").toLowerCase()) && (
+                                        <button
+                                          onClick={() => {
+                                            if (window.confirm("Abort Protocol: Are you sure you want to cancel this service request?")) {
+                                              handleUpdateRequestStatus(request.id, "cancelled");
+                                            }
+                                          }}
+                                          className="p-2 bg-white text-slate-400 hover:text-orange-500 rounded-xl shadow-sm border border-slate-100 transition-all"
+                                          title="Cancel Protocol"
+                                        >
+                                          <X size={14} />
+                                        </button>
+                                      )}
                                       <button
                                         onClick={() => handleDeleteRequest(request.id)}
                                         className="p-2 bg-white text-slate-400 hover:text-red-500 rounded-xl shadow-sm border border-slate-100 transition-all"

@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from app.curd import packages as crud_package
 from app.curd import foodorder as crud_food_order
 from app.schemas.foodorder import FoodOrderCreate, FoodOrderItemCreate
+from app.utils.employee_helpers import get_fallback_employee_id
 import shutil
 import uuid
 
@@ -943,10 +944,14 @@ def check_in_package_booking(
                                          items_to_add.append(FoodOrderItemCreate(food_item_id=found_item.id, quantity=int(qty)))
                                  
                                  # Create the order via CRUD to ensure ServiceRequest is created
+                                 assigned_emp_id = item.get("assigned_employee_id")
+                                 if not assigned_emp_id:
+                                     assigned_emp_id = get_fallback_employee_id(db, current_user.employee.id if current_user.employee else None)
+                                 
                                  order_data = FoodOrderCreate(
                                      room_id=room_id,
                                      amount=0.0,
-                                     assigned_employee_id=current_user.employee.id if current_user.employee else 1,
+                                     assigned_employee_id=int(assigned_emp_id) if assigned_emp_id else None,
                                      items=items_to_add,
                                      status="scheduled",
                                      billing_status="unbilled",

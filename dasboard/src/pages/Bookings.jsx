@@ -2117,13 +2117,30 @@ const CheckInModal = ({
   const [featureMenuSelections, setFeatureMenuSelections] = useState({}); // { featureName: [{ foodItemId, quantity, name }] }
   const [activeTasks, setActiveTasks] = useState({ services: [], orders: [] });
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [featureEmployees, setFeatureEmployees] = useState({}); // { featureName: employeeId }
+
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const res = await API.get("/employees?limit=1000", { headers: { Authorization: `Bearer ${token}` } });
+        const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        setEmployees(data);
+      } catch (err) {
+        console.error("Failed to fetch employees for check-in:", err);
+      }
+    };
+    fetchEmployees();
+  }, []);
 
   useEffect(() => {
     const fetchFoodItems = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await API.get("/food-items/", { headers: { Authorization: `Bearer ${token}` } });
-        setFoodItems(res.data || []);
+        const res = await API.get("/food-items", { headers: { Authorization: `Bearer ${token}` } });
+        const data = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+        setFoodItems(data);
       } catch (err) {
         console.error("Failed to fetch food items for check-in:", err);
       }
@@ -2239,6 +2256,7 @@ const CheckInModal = ({
             extraPrice: 0,
             scheduledTime: featureTimes[name] || null,
             scheduledDate: featureDates[name] || null,
+            assigned_employee_id: featureEmployees[name] || null,
             specificFoodItems: featureMenuSelections[name] || []
           });
         }
