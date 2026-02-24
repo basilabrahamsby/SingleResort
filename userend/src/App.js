@@ -859,16 +859,17 @@ const BackgroundAnimation = ({ theme }) => {
                 .taj-section-header {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
-                    gap: 3rem 5rem;
+                    gap: 3.5rem 5rem;
                     align-items: end;
-                    margin-bottom: 4rem;
-                    padding-bottom: 2rem;
-                    border-bottom: 1px solid rgba(200,151,30,0.15);
+                    margin-bottom: 2.5rem;
+                    padding-bottom: 1.5rem;
+                    border-bottom: none;
                 }
-                @media (max-width: 768px) {
+                @media (max-width: 1024px) {
                     .taj-section-header {
                         grid-template-columns: 1fr;
-                        gap: 1.25rem;
+                        gap: 1.5rem;
+                        text-align: left;
                     }
                 }
                 .taj-section-header__left {
@@ -1121,10 +1122,87 @@ export default function App() {
 
     // Package image slider state
     const [packageImageIndex, setPackageImageIndex] = useState({});
-    // Signature carousel index
+    const [packageCarouselIndex, setPackageCarouselIndex] = useState(0);
+    const [isPackageHovered, setIsPackageHovered] = useState(false);
+
+    const nextPackage = () => {
+        if (packages.length <= 3) return;
+        setPackageCarouselIndex((prev) => (prev + 1) % packages.length);
+    };
+    const prevPackage = () => {
+        if (packages.length <= 3) return;
+        setPackageCarouselIndex((prev) => (prev - 1 + packages.length) % packages.length);
+    };
+
+
+
+    // Signature carousel state
     const [signatureIndex, setSignatureIndex] = useState(0);
-    // Gallery carousel index
+    const [isSignatureHovered, setIsSignatureHovered] = useState(false);
+
+    const [serviceCarouselIndex, setServiceCarouselIndex] = useState(0);
+    const [attractionCarouselIndex, setAttractionCarouselIndex] = useState(0);
     const [galleryIndex, setGalleryIndex] = useState(0);
+    const [isServiceHovered, setIsServiceHovered] = useState(false);
+    const [isAttractionHovered, setIsAttractionHovered] = useState(false);
+    const [isGalleryHovered, setIsGalleryHovered] = useState(false);
+
+    // Initial setup for infinite loops - Start in the middle set
+    useEffect(() => {
+        if (services.length > 0 && serviceCarouselIndex === 0) setServiceCarouselIndex(services.length);
+    }, [services.length]);
+
+    useEffect(() => {
+        const activeAttractions = nearbyAttractions.filter(a => a.is_active);
+        if (activeAttractions.length > 0 && attractionCarouselIndex === 0) setAttractionCarouselIndex(activeAttractions.length);
+    }, [nearbyAttractions]);
+
+    useEffect(() => {
+        if (galleryImages.length > 0 && galleryIndex === 0) setGalleryIndex(galleryImages.length);
+    }, [galleryImages.length]);
+
+    // Looping Handlers
+    const nextService = () => setServiceCarouselIndex(prev => prev + 1);
+    const prevService = () => setServiceCarouselIndex(prev => prev - 1);
+
+    const nextAttraction = () => setAttractionCarouselIndex(prev => prev + 1);
+    const prevAttraction = () => setAttractionCarouselIndex(prev => prev - 1);
+
+    const nextGallery = () => setGalleryIndex(prev => prev + 1);
+    const prevGallery = () => setGalleryIndex(prev => prev - 1);
+
+    // Teleport logic for seamless looping
+    useEffect(() => {
+        if (services.length === 0) return;
+        if (serviceCarouselIndex >= services.length * 2) setServiceCarouselIndex(services.length);
+        if (serviceCarouselIndex < services.length) setServiceCarouselIndex(services.length * 2 - 1);
+    }, [serviceCarouselIndex, services.length]);
+
+    useEffect(() => {
+        const count = nearbyAttractions.filter(a => a.is_active).length;
+        if (count === 0) return;
+        if (attractionCarouselIndex >= count * 2) setAttractionCarouselIndex(count);
+        if (attractionCarouselIndex < count) setAttractionCarouselIndex(count * 2 - 1);
+    }, [attractionCarouselIndex, nearbyAttractions]);
+
+    useEffect(() => {
+        if (galleryImages.length === 0) return;
+        if (galleryIndex >= galleryImages.length * 2) setGalleryIndex(galleryImages.length);
+        if (galleryIndex < galleryImages.length) setGalleryIndex(galleryImages.length * 2 - 1);
+    }, [galleryIndex, galleryImages]);
+
+    // Auto-rotation
+    useEffect(() => {
+        if (isServiceHovered || services.length === 0) return;
+        const timer = setInterval(nextService, 6000);
+        return () => clearInterval(timer);
+    }, [isServiceHovered, services.length]);
+
+    useEffect(() => {
+        if (isAttractionHovered || nearbyAttractions.length === 0) return;
+        const timer = setInterval(nextAttraction, 7000);
+        return () => clearInterval(timer);
+    }, [isAttractionHovered, nearbyAttractions.length]);
 
     // Banner Message State
     const [bannerMessage, setBannerMessage] = useState({ type: null, text: "" });
@@ -1304,7 +1382,7 @@ export default function App() {
         const boxShadow = abs === 0
             ? '0 25px 45px rgba(12, 61, 38, 0.28)'
             : '0 18px 35px rgba(12, 61, 38, 0.18)';
-        const backgroundColor = abs === 0 ? '#ffffff' : 'rgba(255,255,255,0.92)';
+
         return {
             transform: `translate(-50%, -50%) translate(${translateX}, ${translateY}) scale(${scale})`,
             opacity,
@@ -1488,6 +1566,57 @@ export default function App() {
             setCurrentAttractionBannerIndex(0);
         }
     }, [totalNearbyAttractionBanners]);
+
+    // Auto-rotate Packages carousel - reset timer when index changes (manual or auto)
+    useEffect(() => {
+        if (packages.length > 3 && !isPackageHovered) {
+            const interval = setInterval(() => {
+                nextPackage();
+            }, 6000); // Change package every 6 seconds
+            return () => clearInterval(interval);
+        }
+    }, [packages.length, isPackageHovered, packageCarouselIndex]);
+
+    // Auto-rotate Attractions carousel - reset timer when index changes
+    useEffect(() => {
+        const activeAttractions = nearbyAttractions.filter(a => a.is_active);
+        if (activeAttractions.length > 3 && !isAttractionHovered) {
+            const interval = setInterval(() => {
+                nextAttraction();
+            }, 7000); // Change attraction every 7 seconds
+            return () => clearInterval(interval);
+        }
+    }, [nearbyAttractions, isAttractionHovered, attractionCarouselIndex]);
+
+    // Auto-rotate Gallery carousel - reset timer when index changes
+    useEffect(() => {
+        if (galleryImages.length > 1 && !isGalleryHovered) {
+            const interval = setInterval(() => {
+                nextGallery();
+            }, 8000); // Change gallery image every 8 seconds
+            return () => clearInterval(interval);
+        }
+    }, [galleryImages.length, isGalleryHovered, galleryIndex]);
+
+    // Auto-rotate Signature Experiences
+    useEffect(() => {
+        if (totalSignatureExperiences > 1 && !isSignatureHovered) {
+            const interval = setInterval(() => {
+                goToSignature(1);
+            }, 9000); // Change experience every 9 seconds
+            return () => clearInterval(interval);
+        }
+    }, [totalSignatureExperiences, isSignatureHovered, signatureIndex]);
+
+    // Auto-rotate Services carousel
+    useEffect(() => {
+        if (services.length > 3 && !isServiceHovered) {
+            const interval = setInterval(() => {
+                nextService();
+            }, 7500); // Change service every 7.5 seconds
+            return () => clearInterval(interval);
+        }
+    }, [services.length, isServiceHovered, serviceCarouselIndex]);
 
     const toggleChat = () => setIsChatOpen(!isChatOpen);
 
@@ -2622,1347 +2751,1396 @@ export default function App() {
                     </div>
 
                     {/* ── Exclusive Deals (Packages) ─────────────────────────── */}
-                    <section id="packages" style={{ backgroundColor: '#ffffff', paddingTop: '5.5rem', paddingBottom: '7rem' }}>
-                        <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
+                    <section id="packages" style={{ position: 'relative', backgroundColor: '#faf9f6', paddingTop: '3.5rem', paddingBottom: '6rem', overflow: 'hidden' }}>
+                        {/* Dynamic Background — Blurred focus image */}
+                        <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            zIndex: 0,
+                            opacity: 0.45,
+                            transition: 'all 1s ease-in-out',
+                            filter: 'blur(60px) saturate(1.2)',
+                            pointerEvents: 'none'
+                        }}>
+                            {packages.length > 0 && (
+                                <img
+                                    src={packages[packageCarouselIndex + 1]?.images?.[0]?.image_url
+                                        ? getImageUrl(packages[packageCarouselIndex + 1].images[0].image_url)
+                                        : (packages[packageCarouselIndex]?.images?.[0]?.image_url ? getImageUrl(packages[packageCarouselIndex].images[0].image_url) : '')}
+                                    alt="Background"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                            )}
+                            {/* Overlay to ensure readability */}
+                            <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.45)' }} />
+                        </div>
+
+                        <div className="w-full mx-auto px-4 sm:px-8 md:px-16" style={{ position: 'relative', zIndex: 1 }}>
                             {/* Taj 2-column section header */}
-                            <div className="taj-section-header">
+                            <div className="taj-section-header" style={{ marginBottom: '2.5rem', paddingBottom: '1.5rem' }}>
                                 <div className="taj-section-header__left">
                                     <span className="taj-section-header__eyebrow">Exclusive Deals</span>
                                     <h2 className="taj-section-header__title">Latest<br />Offers</h2>
                                 </div>
-                                <div className="taj-section-header__right">
+                                <div className="taj-section-header__right" style={{ textAlign: 'right', fontSize: '0.92rem', color: '#6b6b75', lineHeight: '1.8' }}>
                                     Dive into cool adventures at our picture-perfect destination. From weekend escapes to extended stays, our curated packages offer more than just a room.
                                 </div>
                             </div>
 
-                            {/* Packages Grid — Taj "Latest Offers" Style */}
+                            {/* Packages Carousel — Taj "Latest Offers" Style */}
                             {packages.length > 0 ? (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem', marginTop: '3.5rem' }}>
-                                    {packages.map((pkg, idx) => {
-                                        const imgIndex = packageImageIndex[pkg.id] || 0;
-                                        const currentImage = pkg.images && pkg.images[imgIndex];
-                                        return (
-                                            <div
-                                                key={pkg.id}
-                                                className="group"
-                                                style={{ position: 'relative', cursor: 'pointer' }}
-                                                onClick={() => handleOpenPackageBookingForm(pkg.id)}
+                                <div
+                                    style={{ position: 'relative', marginTop: '2rem', padding: '0 2rem' }}
+                                    onMouseEnter={() => setIsPackageHovered(true)}
+                                    onMouseLeave={() => setIsPackageHovered(false)}
+                                >
+                                    {/* Navigation Buttons */}
+                                    {packages.length > 3 && (
+                                        <>
+                                            <button
+                                                onClick={prevPackage}
+                                                style={{ position: 'absolute', left: '-1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gold)', zIndex: 10, padding: '1rem' }}
+                                                className="hover:scale-125 transition-transform hidden lg:block"
                                             >
-                                                {/* Tall full-bleed image — sharp corners */}
-                                                <div style={{ position: 'relative', height: '420px', overflow: 'hidden', background: 'var(--obsidian)' }}>
-                                                    <img
-                                                        src={currentImage ? getImageUrl(currentImage.image_url) : ITEM_PLACEHOLDER}
-                                                        alt={pkg.title}
-                                                        style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.9s cubic-bezier(0.23,1,0.32,1)' }}
-                                                        className="group-hover:scale-[1.05]"
-                                                        onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                                                    />
-                                                    {/* Subtle bottom vignette */}
-                                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,15,0.3) 0%, transparent 50%)', pointerEvents: 'none' }} />
+                                                <ChevronLeft size={52} strokeWidth={1} />
+                                            </button>
+                                            <button
+                                                onClick={nextPackage}
+                                                style={{ position: 'absolute', right: '-1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gold)', zIndex: 10, padding: '1rem' }}
+                                                className="hover:scale-125 transition-transform hidden lg:block"
+                                            >
+                                                <ChevronRight size={52} strokeWidth={1} />
+                                            </button>
+                                        </>
+                                    )}
 
-                                                    {/* Image Slider Dots — Only if multiple images */}
-                                                    {pkg.images && pkg.images.length > 1 && (
-                                                        <div
-                                                            className="absolute bottom-16 left-1/2 -translate-x-1/2 flex gap-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        >
-                                                            {pkg.images.map((_, iIdx) => (
-                                                                <button
-                                                                    key={iIdx}
-                                                                    onClick={() => setPackageImageIndex(prev => ({ ...prev, [pkg.id]: iIdx }))}
-                                                                    style={{ width: '6px', height: '6px', borderRadius: '50%', background: iIdx === imgIndex ? '#ffffff' : 'rgba(255,255,255,0.4)', border: 'none', padding: 0 }}
-                                                                />
-                                                            ))}
+                                    <div style={{ overflow: 'hidden', padding: '4rem 1.5rem' }}>
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: '2.5rem',
+                                            transition: 'transform 1.2s cubic-bezier(0.19, 1, 0.22, 1)',
+                                            transform: `translateX(calc(-${packageCarouselIndex} * (100% / 3 + 2.5rem / 3)))`
+                                        }}>
+                                            {packages.map((pkg, index) => {
+                                                const imgIndex = packageImageIndex[pkg.id] || 0;
+                                                const currentImage = pkg.images && pkg.images[imgIndex];
+
+                                                // Center card logic for 3 visible cards
+                                                const isCenter = index === (packageCarouselIndex + 1);
+
+                                                return (
+                                                    <div
+                                                        key={pkg.id}
+                                                        className="group"
+                                                        style={{
+                                                            position: 'relative',
+                                                            cursor: 'pointer',
+                                                            flex: '0 0 calc((100% - 5rem) / 3)',
+                                                            maxWidth: 'calc((100% - 5rem) / 3)',
+                                                            transition: 'all 1s cubic-bezier(0.19, 1, 0.22, 1)',
+                                                            transform: isCenter ? 'scale(1.15)' : 'scale(1)',
+                                                            zIndex: isCenter ? 5 : 1,
+                                                            opacity: (index >= packageCarouselIndex && index <= packageCarouselIndex + 2) ? 1 : 0.3,
+                                                            filter: isCenter ? 'none' : 'grayscale(15%) brightness(95%)',
+                                                            margin: isCenter ? '0 0.5rem' : '0'
+                                                        }}
+                                                        onClick={() => handleOpenPackageBookingForm(pkg.id)}
+                                                    >
+                                                        {/* Tall image container — sharp corners */}
+                                                        <div style={{
+                                                            position: 'relative',
+                                                            height: '420px',
+                                                            overflow: 'hidden',
+                                                            background: 'var(--obsidian)',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            boxShadow: isCenter ? '0 30px 60px rgba(0,0,0,0.35)' : '0 10px 30px rgba(0,0,0,0.1)',
+                                                            padding: '0'
+                                                        }}>
+                                                            <img
+                                                                src={currentImage ? getImageUrl(currentImage.image_url) : ITEM_PLACEHOLDER}
+                                                                alt={pkg.title}
+                                                                style={{
+                                                                    position: 'absolute',
+                                                                    top: 0,
+                                                                    left: 0,
+                                                                    width: '100%',
+                                                                    height: '100%',
+                                                                    objectFit: 'cover',
+                                                                    transition: 'transform 1s cubic-bezier(0.19, 1, 0.22, 1)'
+                                                                }}
+                                                                className="group-hover:scale-[1.08]"
+                                                                onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                            />
+                                                            {/* Subtle bottom vignette */}
+                                                            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,15,0.45) 0%, transparent 60%)', pointerEvents: 'none' }} />
+
+                                                            {/* Image Slider Dots — Only if multiple images */}
+                                                            {pkg.images && pkg.images.length > 1 && (
+                                                                <div
+                                                                    className="absolute bottom-16 left-1/2 -translate-x-1/2 flex gap-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                                                                >
+                                                                    {pkg.images.map((_, iIdx) => (
+                                                                        <button
+                                                                            key={iIdx}
+                                                                            onClick={() => setPackageImageIndex(prev => ({ ...prev, [pkg.id]: iIdx }))}
+                                                                            style={{ width: '6px', height: '6px', borderRadius: '50%', background: iIdx === imgIndex ? '#ffffff' : 'rgba(255,255,255,0.4)', border: 'none', padding: 0 }}
+                                                                        />
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    )}
-                                                </div>
 
-                                                {/* White caption plate — Protruding at the bottom */}
-                                                <div style={{
-                                                    position: 'relative',
-                                                    marginTop: '-2.75rem',
-                                                    marginLeft: '1.5rem',
-                                                    marginRight: '1.5rem',
-                                                    background: '#ffffff',
-                                                    padding: '1.4rem 1.6rem 1.6rem',
-                                                    boxShadow: '0 8px 32px rgba(10,10,15,0.08)',
-                                                    zIndex: 2,
-                                                    transition: 'transform 0.4s ease, box-shadow 0.4s ease'
-                                                }} className="group-hover:-translate-y-2">
-                                                    {/* Package Title — All Caps Tracked */}
-                                                    <h3 style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', fontWeight: '600', letterSpacing: '0.24em', textTransform: 'uppercase', color: 'var(--obsidian)', marginBottom: '0.75rem', lineHeight: '1.5' }}>
-                                                        {pkg.title}
-                                                    </h3>
-                                                    {/* Gold hairline */}
-                                                    <div style={{ height: '1px', width: '1.5rem', background: 'var(--gold-warm)', marginBottom: '1rem' }} />
-                                                    {/* Call to Action */}
-                                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                        <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.58rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--gold)' }}>
-                                                            MORE &rsaquo;
-                                                        </span>
-                                                        <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.9rem', color: 'var(--obsidian)' }}>
-                                                            {formatCurrency(pkg.price || 0)}
-                                                        </span>
+                                                        {/* White caption plate — Protruding at the bottom */}
+                                                        <div style={{
+                                                            position: 'relative',
+                                                            marginTop: '-3rem',
+                                                            marginLeft: '0',
+                                                            marginRight: '0',
+                                                            background: '#ffffff',
+                                                            padding: '1.5rem 1.8rem 1.8rem',
+                                                            boxShadow: isCenter ? '0 15px 45px rgba(10,10,15,0.18)' : '0 8px 32px rgba(10,10,15,0.08)',
+                                                            zIndex: 2,
+                                                            transition: 'transform 0.5s ease, box-shadow 0.5s ease'
+                                                        }} className="group-hover:-translate-y-2">
+                                                            {/* Package Title — All Caps Tracked */}
+                                                            <h3 style={{ fontFamily: 'var(--font-body)', fontSize: '0.68rem', fontWeight: '600', letterSpacing: '0.24em', textTransform: 'uppercase', color: 'var(--obsidian)', marginBottom: '0.85rem', lineHeight: '1.5' }}>
+                                                                {pkg.title}
+                                                            </h3>
+                                                            {/* Gold hairline */}
+                                                            <div style={{ height: '1px', width: '1.5rem', background: 'var(--gold-warm)', marginBottom: '1.2rem' }} />
+                                                            {/* Call to Action */}
+                                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                                <span style={{ fontFamily: 'var(--font-body)', fontSize: '0.6rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--gold)' }}>
+                                                                    DETAILS &rsaquo;
+                                                                </span>
+                                                                <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', color: 'var(--obsidian)' }}>
+                                                                    {formatCurrency(pkg.price || 0)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </div>
-                                        );
-                                        <div className={`p-6 ${theme.bgCard}`}>
-                                            <h3 className={`text-xl md:text-2xl font-extrabold ${theme.textPrimary} mb-2 leading-tight`}>
-                                                {pkg.title}
-                                            </h3>
-                                            {pkg.duration && (
-                                                <p className={`text-base ${theme.textSecondary} font-medium mb-2`}>
-                                                    {pkg.duration}
-                                                </p>
-                                            )}
-                                            {/* Price */}
-                                            <div className="mb-4 pt-3 border-t border-gray-200">
-                                                <p className={`text-sm ${theme.textSecondary} mb-1`}>Starting from</p>
-                                                <p className={`text-2xl font-extrabold ${theme.textAccent || theme.textPrimary}`}>
-                                                    {formatCurrency(pkg.price || 0)}
-                                                    <span className={`text-sm ${theme.textSecondary} font-normal`}>/package</span>
-                                                </p>
-                                            </div>
-                                            {/* CTA Row */}
-                                            <div className="mt-4 flex items-center justify-between">
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => { e.stopPropagation(); handleOpenPackageBookingForm(pkg.id); }}
-                                                    className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#d4af37] via-[#f4d03f] to-[#d4af37] text-[#1a472a] font-bold shadow-lg hover:shadow-xl hover:from-[#f4d03f] hover:via-[#ffd700] hover:to-[#f4d03f] border border-[#b8941f] uppercase tracking-wide transition-all duration-300"
-                                                >
-                                                    Book Now
-                                                </button>
-                                                <span className={`text-sm ${theme.textSecondary}`}>
-                                                    Tap card to book
-                                                </span>
-                                            </div>
-                                        </div>
-                                                    </div>
-                            );
+                                                );
                                             })}
-                        </div>
-                                    )}
-                    </div>
-                    ) : (
-                    <p className={`text-center py-12 ${theme.textSecondary}`}>No packages available at the moment.</p>
-                            )}
-            </div>
-        </section >
-
-            {/* Luxury Villa Showcase Section */ }
-            < section id = "rooms-section" style = {{ backgroundColor: '#faf7f0', paddingTop: '5.5rem', paddingBottom: '5.5rem' }
-}>
-    <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
-        {/* Taj 2-column section header */}
-        <div className="taj-section-header">
-            <div className="taj-section-header__left">
-                <span className="taj-section-header__eyebrow">Luxury Accommodation</span>
-                <h2 className="taj-section-header__title">Our Rooms &amp;<br />Cottages</h2>
-            </div>
-            <div className="taj-section-header__right">
-                Experience the perfect union of luxury and nature in our eco-conscious cottages. Panoramic lake and forest views frame every morning, while curated amenities ensure uncompromising comfort.
-            </div>
-        </div>
-
-        {/* Info Banner - no dates selected */}
-        {(!bookingData.check_in || !bookingData.check_out) && (
-            <div style={{ marginBottom: '2.5rem', padding: '1rem 1.5rem', border: '1px solid rgba(200,151,30,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: '#6b6b75', letterSpacing: '0.03em' }}>
-                    Select check-in and check-out dates above to check room availability for your stay
-                </p>
-                <button
-                    onClick={() => { setShowAmenities(false); setIsGeneralBookingOpen(true); }}
-                    style={{ fontFamily: 'var(--font-body)', fontSize: '0.58rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--gold)', background: 'none', border: '1px solid rgba(200,151,30,0.4)', padding: '0.45rem 1.1rem', cursor: 'pointer' }}
-                >
-                    Select Dates
-                </button>
-            </div>
-        )}
-
-        {/* Availability dates banner */}
-        {bookingData.check_in && bookingData.check_out && Object.keys(roomAvailability).length > 0 && (
-            <div style={{ marginBottom: '2rem', padding: '0.7rem 1.5rem', borderLeft: '2px solid var(--gold)', background: 'rgba(200,151,30,0.06)' }}>
-                <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.76rem', color: 'var(--obsidian)', letterSpacing: '0.03em' }}>
-                    Showing availability for <strong>{bookingData.check_in}</strong> → <strong>{bookingData.check_out}</strong>
-                </p>
-            </div>
-        )}
-
-        {/* Room Cards Grid */}
-        {rooms.length > 0 ? (
-            <>
-                <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.68rem', letterSpacing: '0.18em', color: '#9a9a9a', textTransform: 'uppercase', marginBottom: '1.75rem' }}>
-                    Showing all {rooms.length} rooms
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1.5rem', alignItems: 'start' }}>
-                    {rooms.map((room, idx) => {
-                        const isBooked = bookingData.check_in && bookingData.check_out && !roomAvailability[room.id];
-                        const hasDateFilter = !!(bookingData.check_in && bookingData.check_out);
-                        return (
-                            <div
-                                key={room.id}
-                                className="group"
-                                style={{ position: 'relative', cursor: isBooked ? 'not-allowed' : 'pointer', opacity: isBooked ? 0.7 : 1 }}
-                            >
-                                {/* Tall full-bleed image — sharp corners */}
-                                <div style={{ position: 'relative', height: idx % 3 === 1 ? '420px' : '370px', overflow: 'hidden', background: 'var(--obsidian)' }}>
-                                    <img
-                                        src={getImageUrl(room.image_url)}
-                                        alt={room.type}
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.9s cubic-bezier(0.23,1,0.32,1)', filter: isBooked ? 'grayscale(40%)' : 'none' }}
-                                        className={isBooked ? '' : 'group-hover:scale-[1.05]'}
-                                        onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                                    />
-                                    {/* Subtle bottom vignette */}
-                                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,15,0.32) 0%, transparent 50%)', pointerEvents: 'none' }} />
-
-                                    {/* Availability dot — top-right, only when dates selected */}
-                                    {hasDateFilter && (
-                                        <div style={{ position: 'absolute', top: '1rem', right: '1rem', padding: '0.3rem 0.8rem', background: isBooked ? 'rgba(180,30,30,0.88)' : 'rgba(20,130,60,0.85)', backdropFilter: 'blur(6px)', fontFamily: 'var(--font-body)', fontSize: '0.55rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#ffffff' }}>
-                                            {isBooked ? 'Booked' : 'Available'}
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: '4rem 0' }}>
+                                    <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', letterSpacing: '0.1em', color: '#9a9a9a' }}>No active offers at the moment.</p>
+                                </div>
+                            )}
+                        </div>
+                    </section>
 
-                                {/* White caption plate */}
-                                <div style={{
-                                    position: 'relative',
-                                    marginTop: '-2.75rem',
-                                    marginLeft: '1rem',
-                                    marginRight: '1rem',
-                                    background: '#ffffff',
-                                    padding: '1.4rem 1.6rem 1.6rem',
-                                    boxShadow: '0 8px 32px rgba(10,10,15,0.1)',
-                                    zIndex: 2,
-                                    transition: 'box-shadow 0.4s ease'
-                                }}>
-                                    {/* Room type */}
-                                    <h3 style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', fontWeight: '600', letterSpacing: '0.24em', textTransform: 'uppercase', color: 'var(--obsidian)', marginBottom: '0.5rem', lineHeight: '1.5' }}>
-                                        {room.type}
-                                    </h3>
-                                    {/* Room number */}
-                                    <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.6rem', letterSpacing: '0.1em', color: '#9a9a9a', marginBottom: '0.75rem' }}>
-                                        Room #{room.number}
+                    {/* Luxury Villa Showcase Section */}
+                    <section id="rooms-section" style={{ backgroundColor: '#faf7f0', paddingTop: '5.5rem', paddingBottom: '5.5rem' }}>
+                        <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
+                            {/* Taj 2-column section header */}
+                            <div className="taj-section-header">
+                                <div className="taj-section-header__left">
+                                    <span className="taj-section-header__eyebrow">Luxury Accommodation</span>
+                                    <h2 className="taj-section-header__title">Our Rooms &amp;<br />Cottages</h2>
+                                </div>
+                                <div className="taj-section-header__right">
+                                    Experience the perfect union of luxury and nature in our eco-conscious cottages. Panoramic lake and forest views frame every morning, while curated amenities ensure uncompromising comfort.
+                                </div>
+                            </div>
+
+                            {/* Info Banner - no dates selected */}
+                            {(!bookingData.check_in || !bookingData.check_out) && (
+                                <div style={{ marginBottom: '2.5rem', padding: '1rem 1.5rem', border: '1px solid rgba(200,151,30,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                                    <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: '#6b6b75', letterSpacing: '0.03em' }}>
+                                        Select check-in and check-out dates above to check room availability for your stay
                                     </p>
-                                    {/* Gold hairline */}
-                                    <div style={{ height: '1px', width: '1.75rem', background: 'linear-gradient(90deg,var(--gold-warm),var(--gold-light))', marginBottom: '0.85rem' }} />
-                                    {/* Price */}
-                                    <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a9a9a', marginBottom: '0.2rem' }}>Starting from</p>
-                                    <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', fontWeight: '500', color: 'var(--obsidian)', letterSpacing: '0.02em', marginBottom: '1rem' }}>
-                                        {formatCurrency(room.price)}<span style={{ fontSize: '0.65rem', fontFamily: 'var(--font-body)', color: '#9a9a9a', fontWeight: '400', marginLeft: '0.3rem' }}>/night</span>
-                                    </p>
-                                    {/* CTA */}
                                     <button
-                                        onClick={() => !isBooked && handleOpenRoomBookingForm(room.id)}
-                                        disabled={isBooked}
-                                        style={{
-                                            fontFamily: 'var(--font-body)',
-                                            fontSize: '0.58rem',
-                                            fontWeight: '600',
-                                            letterSpacing: '0.2em',
-                                            textTransform: 'uppercase',
-                                            color: isBooked ? '#aaa' : 'var(--gold)',
-                                            background: 'none',
-                                            border: 'none',
-                                            cursor: isBooked ? 'not-allowed' : 'pointer',
-                                            padding: 0,
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.3rem',
-                                            transition: 'color 0.25s ease'
-                                        }}
+                                        onClick={() => { setShowAmenities(false); setIsGeneralBookingOpen(true); }}
+                                        style={{ fontFamily: 'var(--font-body)', fontSize: '0.58rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'var(--gold)', background: 'none', border: '1px solid rgba(200,151,30,0.4)', padding: '0.45rem 1.1rem', cursor: 'pointer' }}
                                     >
-                                        {isBooked ? 'Not Available' : 'Book Now'} &rsaquo;
+                                        Select Dates
                                     </button>
                                 </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </>
-        ) : (
-            <div style={{ textAlign: 'center', padding: '4rem 0' }}>
-                <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', letterSpacing: '0.1em', color: '#9a9a9a' }}>No rooms found in the system.</p>
-            </div>
-        )}
+                            )}
 
-    </div>
-                    </section >
-
-    {/* Signature Experiences Section - Resort Style */ }
-    < section style = {{ backgroundColor: '#ffffff', paddingTop: '5.5rem', paddingBottom: '5.5rem' }}>
-        <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
-            {/* Taj 2-column section header */}
-            <div className="taj-section-header">
-                <div className="taj-section-header__left">
-                    <span className="taj-section-header__eyebrow">Curated Activities</span>
-                    <h2 className="taj-section-header__title">In-House<br />Experiences</h2>
-                </div>
-                <div className="taj-section-header__right">
-                    Guests can enjoy a range of curated in-house activities designed to explore the region's rich flora, fauna, and cultural heritage — each crafted for wonder and discovery.
-                </div>
-            </div>
-
-            {totalSignatureExperiences > 0 ? (
-                <div className="relative max-w-6xl mx-auto">
-                    {/* Carousel Container */}
-                    <div className="relative h-[400px] sm:h-[460px] lg:h-[520px]">
-                        {[-2, -1, 0, 1, 2].map((offset) => {
-                            if (totalSignatureExperiences === 1 && offset !== 0) return null;
-                            const experience = totalSignatureExperiences
-                                ? activeSignatureExperiences[(signatureIndex + offset + totalSignatureExperiences) % totalSignatureExperiences]
-                                : null;
-                            if (!experience) return null;
-
-                            const style = getSignatureCardStyle(offset);
-                            const highlights = (experience.description || '')
-                                .split(/[\n•\.]/)
-                                .map(item => item.trim())
-                                .filter(Boolean)
-                                .slice(0, 3);
-
-                            return (
-                                <div
-                                    key={`${experience.id}-${offset}`}
-                                    className="absolute top-1/2 left-1/2 w-[72%] sm:w-[60%] lg:w-[50%] max-w-xl transition-all duration-700 ease-[cubic-bezier(.4,.0,.2,1)] will-change-transform"
-                                    style={{
-                                        ...style,
-                                        pointerEvents: offset === 0 ? 'auto' : 'none'
-                                    }}
-                                >
-                                    <div
-                                        className={`relative group h-[400px] sm:h-[460px] lg:h-[520px] rounded-[32px] overflow-hidden bg-black shadow-[0_35px_80px_rgba(12,61,38,0.35)] transition-transform duration-700 ease-[cubic-bezier(.4,.0,.2,1)] will-change-transform ${offset === 0 ? '' : 'scale-[0.9] opacity-70 blur-[1.5px]'}`}
-                                    >
-                                        <img
-                                            src={getImageUrl(experience.image_url)}
-                                            alt={experience.title}
-                                            className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1500ms] ease-out group-hover:scale-[1.12]"
-                                            onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                                        />
-                                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
-                                        <div className="absolute top-6 left-6 z-10">
-                                            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.35em] text-white/95 bg-white/20 border border-white/30 rounded-full px-5 py-1.5 shadow-lg backdrop-blur">
-                                                Explore
-                                            </span>
-                                        </div>
-                                        <div className="absolute inset-x-0 bottom-0 z-10 px-8 pb-10 pt-16 space-y-6">
-                                            <h3 className="text-3xl sm:text-4xl font-bold text-white leading-tight drop-shadow-[0_12px_30px_rgba(0,0,0,0.6)]">
-                                                {experience.title}
-                                            </h3>
-                                            {highlights.length > 0 && (
-                                                <ul className="space-y-3 text-base text-white/90">
-                                                    {highlights.map((point, idx) => (
-                                                        <li key={idx} className="flex items-start gap-3">
-                                                            <span className="mt-1 inline-flex w-2.5 h-2.5 rounded-full bg-[#c99c4e]" />
-                                                            <span>{point}</span>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* Carousel Controls */}
-                    {totalSignatureExperiences > 1 && (
-                        <>
-                            <button
-                                onClick={() => goToSignature(-1)}
-                                aria-label="Previous experience"
-                                type="button"
-                                className="absolute left-0 top-1/2 -translate-y-1/2 bg-white w-12 h-12 rounded-full shadow-lg border border-[#d6c8ab] flex items-center justify-center hover:scale-105 transition-transform"
-                            >
-                                <ChevronLeft className="w-6 h-6 text-[#0f5132]" />
-                            </button>
-                            <button
-                                onClick={() => goToSignature(1)}
-                                aria-label="Next experience"
-                                type="button"
-                                className="absolute right-0 top-1/2 -translate-y-1/2 bg-white w-12 h-12 rounded-full shadow-lg border border-[#d6c8ab] flex items-center justify-center hover:scale-105 transition-transform"
-                            >
-                                <ChevronRight className="w-6 h-6 text-[#0f5132]" />
-                            </button>
-                        </>
-                    )}
-
-                    {/* Carousel Indicators */}
-                    {totalSignatureExperiences > 1 && (
-                        <div className="mt-10 flex justify-center gap-2">
-                            {activeSignatureExperiences.map((exp, idx) => (
-                                <button
-                                    key={exp.id}
-                                    onClick={() => setSignatureIndex(idx)}
-                                    type="button"
-                                    className={`w-3 h-3 rounded-full transition-all ${idx === signatureIndex
-                                        ? 'bg-[#0f5132]'
-                                        : 'bg-[#c99c4e]/40 hover:bg-[#c99c4e]/70'
-                                        }`}
-                                    aria-label={`Go to experience ${idx + 1}`}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            ) : (
-                <p className={`text-center py-12 ${theme.textSecondary}`}>No signature experiences available at the moment.</p>
-            )}
-        </div>
-                    </section >
-
-    {/* Plan Your Wedding Section - Dynamic with Slider */ }
-{
-    planWeddings.length > 0 && planWeddings.some(w => w.is_active) && (
-        <section
-            className="relative w-full h-[600px] md:h-[700px] overflow-hidden"
-            onMouseEnter={() => setIsWeddingHovered(true)}
-            onMouseLeave={() => setIsWeddingHovered(false)}
-        >
-            {planWeddings.filter(w => w.is_active).map((wedding, index) => (
-                <div key={wedding.id}>
-                    {/* Background Images with Animation and Auto-Change */}
-                    <div className="absolute inset-0">
-                        <img
-                            src={getImageUrl(wedding.image_url)}
-                            alt={wedding.title}
-                            className={`absolute inset-0 w-[110%] h-[110%] object-cover object-center transition-all duration-[10000ms] ease-in-out ${index === currentWeddingIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-110'} animate-[slow-pan_20s_ease-in-out_infinite]`}
-                            style={{
-                                animationDelay: `${index * 2}s`,
-                                animationDirection: index % 2 === 0 ? 'alternate' : 'alternate-reverse'
-                            }}
-                            onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                        />
-                        {/* Gradient Overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30"></div>
-                    </div>
-
-                    {/* Content Overlay */}
-                    <div className={`relative h-full flex items-center justify-center px-4 sm:px-6 lg:px-8 transition-all duration-1000 ease-in-out ${index === currentWeddingIndex ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-                        <div className="max-w-5xl mx-auto text-center text-white">
-                            {/* Badge */}
-                            <div className="mb-6 inline-block px-6 py-2 bg-white/15 backdrop-blur-sm rounded-full border border-white/40 animate-[fadeInUp_1s_ease-out]">
-                                <span className="text-[#d8b471] text-sm font-semibold tracking-[0.35em] uppercase">
-                                    ✦ Perfect Venue ✦
-                                </span>
-                            </div>
-
-                            {/* Main Title */}
-                            <h2 className="text-3xl md:text-5xl lg:text-7xl font-extrabold mb-6 animate-[fadeInUp_1.2s_ease-out] drop-shadow-2xl leading-tight">
-                                {wedding.title.split(' ').slice(0, 3).join(' ')}<br />
-                                <span className="bg-gradient-to-r from-white via-[#f5e6c9] to-white bg-clip-text text-transparent">
-                                    {wedding.title.split(' ').slice(3).join(' ') || 'WEDDING DESTINATION'}
-                                </span>
-                            </h2>
-
-                            {/* Description */}
-                            <p className="text-base md:text-xl lg:text-2xl text-white/90 max-w-4xl mx-auto leading-relaxed mb-8 animate-[fadeInUp_1.4s_ease-out] drop-shadow-lg">
-                                {wedding.description}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            ))}
-
-            {/* Navigation Dots */}
-            {planWeddings.filter(w => w.is_active).length > 1 && (
-                <div className="absolute bottom-4 md:bottom-8 left-1/2 transform -translate-x-1/2 flex gap-2 z-20">
-                    {planWeddings.filter(w => w.is_active).map((_, index) => (
-                        <button
-                            key={index}
-                            onClick={() => setCurrentWeddingIndex(index)}
-                            className={`transition-all duration-300 ${index === currentWeddingIndex
-                                ? "w-12 h-1 bg-[#d8b471] rounded-full shadow-[0_0_12px_rgba(216,180,113,0.6)]"
-                                : "w-8 h-1 bg-white/40 hover:bg-white/70 rounded-full"
-                                }`}
-                            aria-label={`Go to slide ${index + 1}`}
-                        />
-                    ))}
-                </div>
-            )}
-        </section>
-    )
-}
-
-{/* Premium Services Showcase Section */ }
-<section data-services-section style={{ backgroundColor: '#faf7f0', paddingTop: '5.5rem', paddingBottom: '8rem' }}>
-    <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
-        {/* Taj 2-column section header */}
-        <div className="taj-section-header">
-            <div className="taj-section-header__left">
-                <span className="taj-section-header__eyebrow">Premium Services</span>
-                <h2 className="taj-section-header__title">World-Class<br />Amenities</h2>
-            </div>
-            <div className="taj-section-header__right">
-                Every service is conceived as a personal gesture of care — from bespoke spa rituals to curated dining experiences. Our team anticipates your needs before you voice them.
-            </div>
-        </div>
-
-        {services.length > 0 ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1.25rem', alignItems: 'start' }}>
-                {services.slice(0, 3).map((service, idx) => (
-                    <div
-                        key={service.id}
-                        className="group"
-                        style={{ position: 'relative', cursor: 'pointer' }}
-                        onClick={() => handleOpenServiceBookingForm(service.id)}
-                    >
-                        {/* Tall image — sharp edges */}
-                        <div style={{
-                            position: 'relative',
-                            height: idx === 1 ? '430px' : '380px',
-                            overflow: 'hidden',
-                            background: 'var(--obsidian)'
-                        }}>
-                            {service.images && service.images.length > 0 ? (
-                                <img
-                                    src={getImageUrl(service.images[0].image_url)}
-                                    alt={service.name}
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.9s cubic-bezier(0.23,1,0.32,1)' }}
-                                    className="group-hover:scale-[1.06]"
-                                    onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                                />
-                            ) : (
-                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,rgba(28,28,40,0.95),rgba(10,10,15,1))' }}>
-                                    <ConciergeBell style={{ width: '2.5rem', height: '2.5rem', color: 'var(--gold)' }} />
+                            {/* Availability dates banner */}
+                            {bookingData.check_in && bookingData.check_out && Object.keys(roomAvailability).length > 0 && (
+                                <div style={{ marginBottom: '2rem', padding: '0.7rem 1.5rem', borderLeft: '2px solid var(--gold)', background: 'rgba(200,151,30,0.06)' }}>
+                                    <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.76rem', color: 'var(--obsidian)', letterSpacing: '0.03em' }}>
+                                        Showing availability for <strong>{bookingData.check_in}</strong> → <strong>{bookingData.check_out}</strong>
+                                    </p>
                                 </div>
                             )}
-                            {/* Subtle depth gradient */}
-                            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,15,0.28) 0%, transparent 55%)', pointerEvents: 'none' }} />
-                        </div>
 
-                        {/* White caption plate — protrudes below image */}
+                            {/* Room Cards Grid */}
+                            {rooms.length > 0 ? (
+                                <>
+                                    <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.68rem', letterSpacing: '0.18em', color: '#9a9a9a', textTransform: 'uppercase', marginBottom: '1.75rem' }}>
+                                        Showing all {rooms.length} rooms
+                                    </p>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '1.5rem', alignItems: 'start' }}>
+                                        {rooms.map((room, idx) => {
+                                            const isBooked = bookingData.check_in && bookingData.check_out && !roomAvailability[room.id];
+                                            const hasDateFilter = !!(bookingData.check_in && bookingData.check_out);
+                                            return (
+                                                <div
+                                                    key={room.id}
+                                                    className="group"
+                                                    style={{ position: 'relative', cursor: isBooked ? 'not-allowed' : 'pointer', opacity: isBooked ? 0.7 : 1 }}
+                                                >
+                                                    {/* Tall full-bleed image — sharp corners */}
+                                                    <div style={{ position: 'relative', height: idx % 3 === 1 ? '420px' : '370px', overflow: 'hidden', background: 'var(--obsidian)' }}>
+                                                        <img
+                                                            src={getImageUrl(room.image_url)}
+                                                            alt={room.type}
+                                                            style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.9s cubic-bezier(0.23,1,0.32,1)', filter: isBooked ? 'grayscale(40%)' : 'none' }}
+                                                            className={isBooked ? '' : 'group-hover:scale-[1.05]'}
+                                                            onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                        />
+                                                        {/* Subtle bottom vignette */}
+                                                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,15,0.32) 0%, transparent 50%)', pointerEvents: 'none' }} />
+
+                                                        {/* Availability dot — top-right, only when dates selected */}
+                                                        {hasDateFilter && (
+                                                            <div style={{ position: 'absolute', top: '1rem', right: '1rem', padding: '0.3rem 0.8rem', background: isBooked ? 'rgba(180,30,30,0.88)' : 'rgba(20,130,60,0.85)', backdropFilter: 'blur(6px)', fontFamily: 'var(--font-body)', fontSize: '0.55rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#ffffff' }}>
+                                                                {isBooked ? 'Booked' : 'Available'}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* White caption plate */}
+                                                    <div style={{
+                                                        position: 'relative',
+                                                        marginTop: '-2.75rem',
+                                                        marginLeft: '1rem',
+                                                        marginRight: '1rem',
+                                                        background: '#ffffff',
+                                                        padding: '1.4rem 1.6rem 1.6rem',
+                                                        boxShadow: '0 8px 32px rgba(10,10,15,0.1)',
+                                                        zIndex: 2,
+                                                        transition: 'box-shadow 0.4s ease'
+                                                    }}>
+                                                        {/* Room type */}
+                                                        <h3 style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', fontWeight: '600', letterSpacing: '0.24em', textTransform: 'uppercase', color: 'var(--obsidian)', marginBottom: '0.5rem', lineHeight: '1.5' }}>
+                                                            {room.type}
+                                                        </h3>
+                                                        {/* Room number */}
+                                                        <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.6rem', letterSpacing: '0.1em', color: '#9a9a9a', marginBottom: '0.75rem' }}>
+                                                            Room #{room.number}
+                                                        </p>
+                                                        {/* Gold hairline */}
+                                                        <div style={{ height: '1px', width: '1.75rem', background: 'linear-gradient(90deg,var(--gold-warm),var(--gold-light))', marginBottom: '0.85rem' }} />
+                                                        {/* Price */}
+                                                        <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.6rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#9a9a9a', marginBottom: '0.2rem' }}>Starting from</p>
+                                                        <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.3rem', fontWeight: '500', color: 'var(--obsidian)', letterSpacing: '0.02em', marginBottom: '1rem' }}>
+                                                            {formatCurrency(room.price)}<span style={{ fontSize: '0.65rem', fontFamily: 'var(--font-body)', color: '#9a9a9a', fontWeight: '400', marginLeft: '0.3rem' }}>/night</span>
+                                                        </p>
+                                                        {/* CTA */}
+                                                        <button
+                                                            onClick={() => !isBooked && handleOpenRoomBookingForm(room.id)}
+                                                            disabled={isBooked}
+                                                            style={{
+                                                                fontFamily: 'var(--font-body)',
+                                                                fontSize: '0.58rem',
+                                                                fontWeight: '600',
+                                                                letterSpacing: '0.2em',
+                                                                textTransform: 'uppercase',
+                                                                color: isBooked ? '#aaa' : 'var(--gold)',
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                cursor: isBooked ? 'not-allowed' : 'pointer',
+                                                                padding: 0,
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '0.3rem',
+                                                                transition: 'color 0.25s ease'
+                                                            }}
+                                                        >
+                                                            {isBooked ? 'Not Available' : 'Book Now'} &rsaquo;
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: '4rem 0' }}>
+                                    <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.78rem', letterSpacing: '0.1em', color: '#9a9a9a' }}>No rooms found in the system.</p>
+                                </div>
+                            )}
+
+                        </div>
+                    </section >
+
+                    {/* Signature Experiences Section - Resort Style */}
+                    < section style={{ position: 'relative', backgroundColor: '#faf9f6', paddingTop: '3.5rem', paddingBottom: '3.5rem', overflow: 'hidden' }}>
+                        {/* Dynamic Background — Blurred focus image */}
                         <div style={{
-                            position: 'relative',
-                            marginTop: '-2.75rem',
-                            marginLeft: '1rem',
-                            marginRight: '1rem',
-                            background: '#ffffff',
-                            padding: '1.4rem 1.6rem 1.6rem',
-                            boxShadow: '0 8px 32px rgba(10,10,15,0.1)',
-                            transition: 'box-shadow 0.4s ease',
-                            zIndex: 2
+                            position: 'absolute',
+                            inset: 0,
+                            zIndex: 0,
+                            opacity: 0.2,
+                            transition: 'all 1.5s ease-in-out',
+                            filter: 'blur(100px) saturate(1.2)',
+                            pointerEvents: 'none'
                         }}>
-                            <h3 style={{
-                                fontFamily: 'var(--font-body)',
-                                fontSize: '0.65rem',
-                                fontWeight: '600',
-                                letterSpacing: '0.24em',
-                                textTransform: 'uppercase',
-                                color: 'var(--obsidian)',
-                                marginBottom: '0.6rem',
-                                lineHeight: '1.6'
-                            }}>{service.name}</h3>
-                            <div style={{ height: '1px', width: '1.75rem', background: 'linear-gradient(90deg,var(--gold-warm),var(--gold-light))', marginBottom: '0.75rem' }} />
-                            <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); handleOpenServiceBookingForm(service.id); }}
-                                style={{
-                                    fontFamily: 'var(--font-body)',
-                                    fontSize: '0.58rem',
-                                    fontWeight: '600',
-                                    letterSpacing: '0.2em',
-                                    textTransform: 'uppercase',
-                                    color: 'var(--gold)',
-                                    background: 'none',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    padding: 0,
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.3rem',
-                                    transition: 'color 0.25s ease'
-                                }}
-                            >
-                                Explore &rsaquo;
-                            </button>
+                            {totalSignatureExperiences > 0 && (
+                                <img
+                                    src={getImageUrl(activeSignatureExperiences[signatureIndex].image_url)}
+                                    alt="Background"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                            )}
+                            <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.4)' }} />
                         </div>
-                    </div>
-                ))}
-            </div>
-        ) : (
-            <p style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--silver)', fontFamily: 'var(--font-body)' }}>No services available at the moment.</p>
-        )}
-    </div>
-</section>
 
-{/* Premium Cuisine Section - Mountain Shadows Style */ }
-<section data-food-section style={{ backgroundColor: '#faf7f0', paddingTop: '5.5rem', paddingBottom: '6rem' }}>
-    <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
-        {/* Taj 2-column section header */}
-        <div className="taj-section-header">
-            <div className="taj-section-header__left">
-                <span className="taj-section-header__eyebrow">Savor the Art</span>
-                <h2 className="taj-section-header__title">Our Culinary<br />Offerings</h2>
-            </div>
-            <div className="taj-section-header__right">
-                From the freshest farm-to-table breakfasts to candlelit multi-course dinners, our chefs craft each dish as an expression of the region's rich culinary heritage and seasonal abundance.
-            </div>
-        </div>
+                        <div className="w-full mx-auto px-4 sm:px-8 md:px-16" style={{ position: 'relative', zIndex: 1 }}>
+                            {/* Taj 2-column section header */}
+                            <div className="taj-section-header">
+                                <div className="taj-section-header__left">
+                                    <span className="taj-section-header__eyebrow">Curated Activities</span>
+                                    <h2 className="taj-section-header__title">In-House<br />Experiences</h2>
+                                </div>
+                                <div className="taj-section-header__right" style={{ textAlign: 'right', fontSize: '0.92rem', color: '#6b6b75', lineHeight: '1.8' }}>
+                                    Guests can enjoy a range of curated in-house activities designed to explore the region's rich flora, fauna, and cultural heritage — each crafted for wonder and discovery.
+                                </div>
+                            </div>
 
-        {foodItems.length > 0 ? (
-            <>
-                <div className="flex flex-wrap justify-center gap-3 mb-10">
-                    {categoryNames.map((category) => {
-                        const count = category === 'All'
-                            ? foodItems.length
-                            : (foodItemsByCategory[category]?.length || 0);
-                        return (
-                            <button
-                                key={category}
-                                type="button"
-                                onClick={() => setSelectedFoodCategory(category)}
-                                className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${selectedFoodCategory === category
-                                    ? 'bg-[#0f5132] text-white shadow'
-                                    : 'bg-white text-[#0f5132] border border-[#d8c9ac] hover:bg-[#0f5132]/10'
-                                    }`}
-                            >
-                                <span>{category}</span>
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${selectedFoodCategory === category
-                                    ? 'bg-white/20 text-white'
-                                    : 'bg-[#0f5132]/10 text-[#0f5132]'
-                                    }`}>
-                                    {count}
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
-
-                {displayedFoodItems.length > 0 ? (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {displayedFoodItems.map((food) => {
-                            const categoryName = food.category?.name || food.category_name || 'Uncategorized';
-                            return (
+                            {totalSignatureExperiences > 0 ? (
                                 <div
-                                    key={food.id}
-                                    className={`group relative ${theme.bgCard} rounded-2xl overflow-hidden luxury-shadow transition-all duration-300 transform hover:-translate-y-2 border ${theme.cardBorder || theme.border}`}
+                                    className="relative max-w-6xl mx-auto"
+                                    onMouseEnter={() => setIsSignatureHovered(true)}
+                                    onMouseLeave={() => setIsSignatureHovered(false)}
                                 >
-                                    <div className="relative h-40 overflow-hidden">
-                                        <img
-                                            src={getImageUrl(food.images?.[0]?.image_url)}
-                                            alt={food.name}
-                                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                            onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                                        />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
-                                        <div className="absolute top-3 left-3 px-3 py-1 bg-black/40 text-white text-xs font-semibold rounded-full backdrop-blur-sm">
-                                            {categoryName}
+                                    {/* Carousel Container */}
+                                    <div className="relative h-[400px] sm:h-[460px] lg:h-[520px]">
+                                        {[-2, -1, 0, 1, 2].map((offset) => {
+                                            if (totalSignatureExperiences === 1 && offset !== 0) return null;
+                                            const experience = totalSignatureExperiences
+                                                ? activeSignatureExperiences[(signatureIndex + offset + totalSignatureExperiences) % totalSignatureExperiences]
+                                                : null;
+                                            if (!experience) return null;
+
+                                            const style = getSignatureCardStyle(offset);
+                                            const highlights = (experience.description || '')
+                                                .split(/[\n•\.]/)
+                                                .map(item => item.trim())
+                                                .filter(Boolean)
+                                                .slice(0, 3);
+
+                                            return (
+                                                <div
+                                                    key={`${experience.id}-${offset}`}
+                                                    className="absolute top-1/2 left-1/2 w-[72%] sm:w-[60%] lg:w-[50%] max-w-xl transition-all duration-700 ease-[cubic-bezier(.4,.0,.2,1)] will-change-transform"
+                                                    style={{
+                                                        ...style,
+                                                        pointerEvents: offset === 0 ? 'auto' : 'none'
+                                                    }}
+                                                >
+                                                    <div
+                                                        className={`relative group h-[400px] sm:h-[460px] lg:h-[520px] rounded-[32px] overflow-hidden bg-black shadow-[0_35px_80px_rgba(12,61,38,0.35)] transition-transform duration-700 ease-[cubic-bezier(.4,.0,.2,1)] will-change-transform ${offset === 0 ? '' : 'scale-[0.9] opacity-70 blur-[1.5px]'}`}
+                                                    >
+                                                        <img
+                                                            src={getImageUrl(experience.image_url)}
+                                                            alt={experience.title}
+                                                            className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1500ms] ease-out group-hover:scale-[1.12]"
+                                                            onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                        />
+                                                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/60 to-transparent" />
+                                                        <div className="absolute top-6 left-6 z-10">
+                                                            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.35em] text-white/95 bg-white/20 border border-white/30 rounded-full px-5 py-1.5 shadow-lg backdrop-blur">
+                                                                Explore
+                                                            </span>
+                                                        </div>
+                                                        <div className="absolute inset-x-0 bottom-0 z-10 px-8 pb-10 pt-16 space-y-6">
+                                                            <h3 className="text-3xl sm:text-4xl font-bold text-white leading-tight drop-shadow-[0_12px_30px_rgba(0,0,0,0.6)]">
+                                                                {experience.title}
+                                                            </h3>
+                                                            {highlights.length > 0 && (
+                                                                <ul className="space-y-3 text-base text-white/90">
+                                                                    {highlights.map((point, idx) => (
+                                                                        <li key={idx} className="flex items-start gap-3">
+                                                                            <span className="mt-1 inline-flex w-2.5 h-2.5 rounded-full bg-[#c99c4e]" />
+                                                                            <span>{point}</span>
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Carousel Controls */}
+                                    {totalSignatureExperiences > 1 && (
+                                        <>
+                                            <button
+                                                onClick={() => goToSignature(-1)}
+                                                aria-label="Previous experience"
+                                                type="button"
+                                                className="absolute left-0 top-1/2 -translate-y-1/2 bg-white w-12 h-12 rounded-full shadow-lg border border-[#d6c8ab] flex items-center justify-center hover:scale-105 transition-transform"
+                                            >
+                                                <ChevronLeft className="w-6 h-6 text-[#0f5132]" />
+                                            </button>
+                                            <button
+                                                onClick={() => goToSignature(1)}
+                                                aria-label="Next experience"
+                                                type="button"
+                                                className="absolute right-0 top-1/2 -translate-y-1/2 bg-white w-12 h-12 rounded-full shadow-lg border border-[#d6c8ab] flex items-center justify-center hover:scale-105 transition-transform"
+                                            >
+                                                <ChevronRight className="w-6 h-6 text-[#0f5132]" />
+                                            </button>
+                                        </>
+                                    )}
+
+                                    {/* Carousel Indicators */}
+                                    {totalSignatureExperiences > 1 && (
+                                        <div className="mt-10 flex justify-center gap-2">
+                                            {activeSignatureExperiences.map((exp, idx) => (
+                                                <button
+                                                    key={exp.id}
+                                                    onClick={() => setSignatureIndex(idx)}
+                                                    type="button"
+                                                    className={`w-3 h-3 rounded-full transition-all ${idx === signatureIndex
+                                                        ? 'bg-[#0f5132]'
+                                                        : 'bg-[#c99c4e]/40 hover:bg-[#c99c4e]/70'
+                                                        }`}
+                                                    aria-label={`Go to experience ${idx + 1}`}
+                                                />
+                                            ))}
                                         </div>
-                                        <div className="absolute top-3 right-3">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-bold shadow-lg ${food.available ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
-                                                {food.available ? "Available" : "Unavailable"}
-                                            </span>
+                                    )}
+                                </div>
+                            ) : (
+                                <p className={`text-center py-12 ${theme.textSecondary}`}>No signature experiences available at the moment.</p>
+                            )}
+                        </div>
+                    </section >
+
+                    {/* Plan Your Wedding Section - Dynamic with Slider */}
+                    {
+                        planWeddings.length > 0 && planWeddings.some(w => w.is_active) && (
+                            <section
+                                className="relative w-full h-[600px] md:h-[700px] overflow-hidden"
+                                onMouseEnter={() => setIsWeddingHovered(true)}
+                                onMouseLeave={() => setIsWeddingHovered(false)}
+                            >
+                                {planWeddings.filter(w => w.is_active).map((wedding, index) => (
+                                    <div key={wedding.id}>
+                                        {/* Background Images with Animation and Auto-Change */}
+                                        <div className="absolute inset-0">
+                                            <img
+                                                src={getImageUrl(wedding.image_url)}
+                                                alt={wedding.title}
+                                                className={`absolute inset-0 w-[110%] h-[110%] object-cover object-center transition-all duration-[10000ms] ease-in-out ${index === currentWeddingIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-110'} animate-[slow-pan_20s_ease-in-out_infinite]`}
+                                                style={{
+                                                    animationDelay: `${index * 2}s`,
+                                                    animationDirection: index % 2 === 0 ? 'alternate' : 'alternate-reverse'
+                                                }}
+                                                onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                            />
+                                            {/* Gradient Overlay */}
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/60 to-black/30"></div>
+                                        </div>
+
+                                        {/* Content Overlay */}
+                                        <div className={`relative h-full flex items-center justify-center px-4 sm:px-6 lg:px-8 transition-all duration-1000 ease-in-out ${index === currentWeddingIndex ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
+                                            <div className="max-w-5xl mx-auto text-center text-white">
+                                                {/* Badge */}
+                                                <div className="mb-6 inline-block px-6 py-2 bg-white/15 backdrop-blur-sm rounded-full border border-white/40 animate-[fadeInUp_1s_ease-out]">
+                                                    <span className="text-[#d8b471] text-sm font-semibold tracking-[0.35em] uppercase">
+                                                        ✦ Perfect Venue ✦
+                                                    </span>
+                                                </div>
+
+                                                {/* Main Title */}
+                                                <h2 className="text-3xl md:text-5xl lg:text-7xl font-extrabold mb-6 animate-[fadeInUp_1.2s_ease-out] drop-shadow-2xl leading-tight">
+                                                    {wedding.title.split(' ').slice(0, 3).join(' ')}<br />
+                                                    <span className="bg-gradient-to-r from-white via-[#f5e6c9] to-white bg-clip-text text-transparent">
+                                                        {wedding.title.split(' ').slice(3).join(' ') || 'WEDDING DESTINATION'}
+                                                    </span>
+                                                </h2>
+
+                                                {/* Description */}
+                                                <p className="text-base md:text-xl lg:text-2xl text-white/90 max-w-4xl mx-auto leading-relaxed mb-8 animate-[fadeInUp_1.4s_ease-out] drop-shadow-lg">
+                                                    {wedding.description}
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="p-5 space-y-2">
-                                        <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#0f5132]/70 bg-[#0f5132]/10 px-3 py-1 rounded-full">
-                                            {categoryName}
-                                        </span>
-                                        <h4 className={`text-lg font-semibold ${theme.textCardPrimary || theme.textPrimary}`}>
-                                            {food.name}
-                                        </h4>
-                                        {food.price && (
-                                            <p className="text-sm text-[#1a7042] font-semibold">
-                                                {formatCurrency(food.price)}
-                                            </p>
-                                        )}
+                                ))}
+
+                                {/* Navigation Dots */}
+                                {planWeddings.filter(w => w.is_active).length > 1 && (
+                                    <div className="absolute bottom-4 md:bottom-8 left-1/2 transform -translate-x-1/2 flex gap-2 z-20">
+                                        {planWeddings.filter(w => w.is_active).map((_, index) => (
+                                            <button
+                                                key={index}
+                                                onClick={() => setCurrentWeddingIndex(index)}
+                                                className={`transition-all duration-300 ${index === currentWeddingIndex
+                                                    ? "w-12 h-1 bg-[#d8b471] rounded-full shadow-[0_0_12px_rgba(216,180,113,0.6)]"
+                                                    : "w-8 h-1 bg-white/40 hover:bg-white/70 rounded-full"
+                                                    }`}
+                                                aria-label={`Go to slide ${index + 1}`}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
+                            </section>
+                        )
+                    }
+
+                    {/* Premium Services Showcase Section */}
+                    <section data-services-section style={{ position: 'relative', backgroundColor: '#faf9f6', paddingTop: '3.5rem', paddingBottom: '7rem', overflow: 'hidden' }}>
+                        {/* Dynamic Background — Blurred focus image */}
+                        <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            zIndex: 0,
+                            opacity: 0.4,
+                            transition: 'all 1s ease-in-out',
+                            filter: 'blur(60px) saturate(1.2)',
+                            pointerEvents: 'none'
+                        }}>
+                            {services.length > 0 && (
+                                <img
+                                    src={getImageUrl(services[(serviceCarouselIndex + 1) % services.length]?.images?.[0]?.image_url || services[serviceCarouselIndex % services.length]?.images?.[0]?.image_url)}
+                                    alt="Background"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                            )}
+                            <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.4)' }} />
+                        </div>
+
+                        <div className="w-full mx-auto px-4 sm:px-8 md:px-16" style={{ position: 'relative', zIndex: 1 }}>
+                            {/* Taj 2-column section header */}
+                            <div className="taj-section-header" style={{ marginBottom: '2.5rem', paddingBottom: '1.5rem' }}>
+                                <div className="taj-section-header__left">
+                                    <span className="taj-section-header__eyebrow">Premium Services</span>
+                                    <h2 className="taj-section-header__title">World-Class<br />Amenities</h2>
+                                </div>
+                                <div className="taj-section-header__right" style={{ textAlign: 'right', fontSize: '0.92rem', color: '#6b6b75', lineHeight: '1.8' }}>
+                                    Every service is conceived as a personal gesture of care — from bespoke spa rituals to curated dining experiences. Our team anticipates your needs before you voice them.
+                                </div>
+                            </div>
+
+                            {services.length > 0 ? (
+                                <div
+                                    style={{ position: 'relative', marginTop: '2rem', padding: '0 2rem' }}
+                                    onMouseEnter={() => setIsServiceHovered(true)}
+                                    onMouseLeave={() => setIsServiceHovered(false)}
+                                >
+                                    {/* Navigation Buttons */}
+                                    {services.length > 0 ? (
+                                        <>
+                                            <button
+                                                onClick={prevService}
+                                                style={{ position: 'absolute', left: '-1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gold)', zIndex: 10, padding: '1rem' }}
+                                                className="hover:scale-125 transition-transform hidden lg:block"
+                                            >
+                                                <ChevronLeft size={52} strokeWidth={1} />
+                                            </button>
+                                            <button
+                                                onClick={nextService}
+                                                style={{ position: 'absolute', right: '-1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gold)', zIndex: 10, padding: '1rem' }}
+                                                className="hover:scale-125 transition-transform hidden lg:block"
+                                            >
+                                                <ChevronRight size={52} strokeWidth={1} />
+                                            </button>
+                                        </>
+                                    ) : null}
+
+                                    <div style={{ overflow: 'hidden', padding: '4rem 1.5rem' }}>
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: '2.5rem',
+                                            transition: isServiceHovered ? 'none' : 'transform 1.2s cubic-bezier(0.19, 1, 0.22, 1)',
+                                            transform: `translateX(calc(-${serviceCarouselIndex} * (100% / 3 + 2.5rem / 3)))`
+                                        }}>
+                                            {[...services, ...services, ...services].map((service, idx) => {
+                                                const isCenter = idx === (serviceCarouselIndex + 1);
+                                                const isActive = (idx >= serviceCarouselIndex && idx <= serviceCarouselIndex + 2);
+
+                                                return (
+                                                    <div
+                                                        key={`${service.id}-${idx}`}
+                                                        className="group"
+                                                        style={{
+                                                            position: 'relative',
+                                                            cursor: 'pointer',
+                                                            flex: '0 0 calc((100% - 5rem) / 3)',
+                                                            maxWidth: 'calc((100% - 5rem) / 3)',
+                                                            transition: 'all 1s cubic-bezier(0.19, 1, 0.22, 1)',
+                                                            transform: isCenter ? 'scale(1.15)' : 'scale(1)',
+                                                            zIndex: isCenter ? 5 : 1,
+                                                            opacity: isActive ? 1 : 0.3,
+                                                            filter: isCenter ? 'none' : 'grayscale(15%) brightness(95%)',
+                                                            margin: isCenter ? '0 0.5rem' : '0'
+                                                        }}
+                                                        onClick={() => handleOpenServiceBookingForm(service.id)}
+                                                    >
+                                                        {/* Tall image — sharp edges */}
+                                                        <div style={{
+                                                            position: 'relative',
+                                                            height: isCenter ? '430px' : '380px',
+                                                            overflow: 'hidden',
+                                                            background: 'var(--obsidian)',
+                                                            boxShadow: isCenter ? '0 30px 60px rgba(0,0,0,0.35)' : '0 10px 30px rgba(0,0,0,0.1)',
+                                                            transition: 'all 1s cubic-bezier(0.19, 1, 0.22, 1)'
+                                                        }}>
+                                                            {service.images && service.images.length > 0 ? (
+                                                                <img
+                                                                    src={getImageUrl(service.images[0].image_url)}
+                                                                    alt={service.name}
+                                                                    style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.9s cubic-bezier(0.23,1,0.32,1)' }}
+                                                                    className="group-hover:scale-[1.06]"
+                                                                    onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                                />
+                                                            ) : (
+                                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,rgba(28,28,40,0.95),rgba(10,10,15,1))' }}>
+                                                                    <div style={{ color: 'var(--gold)', opacity: 0.35 }}>
+                                                                        <ConciergeBell size={40} strokeWidth={1} />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,15,0.45) 0%, transparent 60%)', pointerEvents: 'none' }} />
+                                                        </div>
+
+                                                        {/* White caption plate — Flush edges */}
+                                                        <div style={{
+                                                            position: 'relative',
+                                                            marginTop: '-3rem',
+                                                            marginLeft: '0',
+                                                            marginRight: '0',
+                                                            background: '#ffffff',
+                                                            padding: '1.8rem 2rem 2rem',
+                                                            boxShadow: isCenter ? '0 15px 45px rgba(10,10,15,0.18)' : '0 8px 32px rgba(10,10,15,0.08)',
+                                                            transition: 'all 0.6s cubic-bezier(0.19, 1, 0.22, 1)',
+                                                            textAlign: 'left'
+                                                        }} className="group-hover:-translate-y-2">
+                                                            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.75rem', fontWeight: '600', letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--obsidian)', marginBottom: '0.8rem' }}>
+                                                                {service.name}
+                                                            </h3>
+                                                            <div style={{ height: '1px', width: '1.25rem', background: 'var(--gold-warm)', marginBottom: '1rem', opacity: 0.7 }} />
+                                                            <div style={{ color: 'var(--gold)', fontSize: '0.62rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                                                                EXPLORE &rsaquo;
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <div className="text-center py-10 bg-white/60 border border-[#d8c9ac] rounded-2xl">
-                        <p className="text-[#4f6f62] font-medium">
-                            No dishes available under <span className="font-semibold text-[#0f5132]">{selectedFoodCategory}</span> yet.
-                        </p>
-                    </div>
-                )}
-            </>
-        ) : (
-            <p className={`text-center py-12 ${theme.textSecondary}`}>No food items available at the moment.</p>
-        )}
-    </div>
-</section>
+                            ) : (
+                                <p className={`text-center py-12 ${theme.textSecondary}`}>No services available at the moment.</p>
+                            )}
+                        </div>
+                    </section>
 
-{/* Premium Gallery Section - Taj Carousel Style */ }
-<section data-gallery-section style={{ backgroundColor: '#ffffff', paddingTop: '5.5rem', paddingBottom: '7rem' }}>
-    <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
-        {/* Taj 2-column section header */}
-        <div className="taj-section-header">
-            <div className="taj-section-header__left">
-                <span className="taj-section-header__eyebrow">Captured Moments</span>
-                <h2 className="taj-section-header__title">Explore the<br />Timeless Beauty</h2>
-            </div>
-            <div className="taj-section-header__right">
-                Witness the charm of our resort's stunning views and unforgettable experiences — each frame a testament to the serene elegance that defines our forest retreat.
-            </div>
-        </div>
+                    {/* Premium Cuisine Section - Mountain Shadows Style */}
+                    <section data-food-section style={{ position: 'relative', backgroundColor: '#faf9f6', paddingTop: '3.5rem', paddingBottom: '6rem', overflow: 'hidden' }}>
+                        <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
+                            {/* Taj 2-column section header */}
+                            <div className="taj-section-header">
+                                <div className="taj-section-header__left">
+                                    <span className="taj-section-header__eyebrow">Savor the Art</span>
+                                    <h2 className="taj-section-header__title">Our Culinary<br />Offerings</h2>
+                                </div>
+                                <div className="taj-section-header__right" style={{ textAlign: 'right', fontSize: '0.92rem', color: '#6b6b75', lineHeight: '1.8' }}>
+                                    From the freshest farm-to-table breakfasts to candlelit multi-course dinners, our chefs craft each dish as an expression of the region's rich culinary heritage and seasonal abundance.
+                                </div>
+                            </div>
 
-        {/* Gallery Carousel */}
-        {galleryImages.length > 0 ? (
-            <div style={{ position: 'relative', marginTop: '3.5rem', paddingBottom: '2rem', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', gap: '2rem', transition: 'transform 0.8s cubic-bezier(0.23,1,0.32,1)', transform: `translateX(calc(50% - 300px - ${galleryIndex * (600 + 32)}px))` }}>
-                    {galleryImages.map((image, idx) => (
-                        <div
-                            key={image.id}
-                            style={{
-                                flex: '0 0 600px',
-                                opacity: galleryIndex === idx ? 1 : 0.4,
-                                transform: galleryIndex === idx ? 'scale(1)' : 'scale(0.9)',
-                                transition: 'all 0.8s cubic-bezier(0.23,1,0.32,1)',
-                                background: '#ffffff',
-                                boxShadow: galleryIndex === idx ? '0 32px 64px rgba(10,10,15,0.12)' : 'none'
-                            }}
-                        >
-                            {/* Image Area */}
-                            <div style={{ height: '400px', overflow: 'hidden', background: '#f5f5f5' }}>
+                            {foodItems.length > 0 ? (
+                                <>
+                                    <div className="flex flex-wrap justify-center gap-3 mb-10">
+                                        {categoryNames.map((category) => {
+                                            const count = category === 'All'
+                                                ? foodItems.length
+                                                : (foodItemsByCategory[category]?.length || 0);
+                                            return (
+                                                <button
+                                                    key={category}
+                                                    type="button"
+                                                    onClick={() => setSelectedFoodCategory(category)}
+                                                    className={`px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${selectedFoodCategory === category
+                                                        ? 'bg-[#0f5132] text-white shadow'
+                                                        : 'bg-white text-[#0f5132] border border-[#d8c9ac] hover:bg-[#0f5132]/10'
+                                                        }`}
+                                                >
+                                                    <span>{category}</span>
+                                                    <span className={`text-xs px-2 py-0.5 rounded-full ${selectedFoodCategory === category
+                                                        ? 'bg-white/20 text-white'
+                                                        : 'bg-[#0f5132]/10 text-[#0f5132]'
+                                                        }`}>
+                                                        {count}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {displayedFoodItems.length > 0 ? (
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                            {displayedFoodItems.map((food) => {
+                                                const categoryName = food.category?.name || food.category_name || 'Uncategorized';
+                                                return (
+                                                    <div
+                                                        key={food.id}
+                                                        className={`group relative ${theme.bgCard} rounded-2xl overflow-hidden luxury-shadow transition-all duration-300 transform hover:-translate-y-2 border ${theme.cardBorder || theme.border}`}
+                                                    >
+                                                        <div className="relative h-40 overflow-hidden">
+                                                            <img
+                                                                src={getImageUrl(food.images?.[0]?.image_url)}
+                                                                alt={food.name}
+                                                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                                                onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                            />
+                                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                                                            <div className="absolute top-3 left-3 px-3 py-1 bg-black/40 text-white text-xs font-semibold rounded-full backdrop-blur-sm">
+                                                                {categoryName}
+                                                            </div>
+                                                            <div className="absolute top-3 right-3">
+                                                                <span className={`px-3 py-1 rounded-full text-xs font-bold shadow-lg ${food.available ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}>
+                                                                    {food.available ? "Available" : "Unavailable"}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="p-5 space-y-2">
+                                                            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#0f5132]/70 bg-[#0f5132]/10 px-3 py-1 rounded-full">
+                                                                {categoryName}
+                                                            </span>
+                                                            <h4 className={`text-lg font-semibold ${theme.textCardPrimary || theme.textPrimary}`}>
+                                                                {food.name}
+                                                            </h4>
+                                                            {food.price && (
+                                                                <p className="text-sm text-[#1a7042] font-semibold">
+                                                                    {formatCurrency(food.price)}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-10 bg-white/60 border border-[#d8c9ac] rounded-2xl">
+                                            <p className="text-[#4f6f62] font-medium">
+                                                No dishes available under <span className="font-semibold text-[#0f5132]">{selectedFoodCategory}</span> yet.
+                                            </p>
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <p className={`text-center py-12 ${theme.textSecondary}`}>No food items available at the moment.</p>
+                            )}
+                        </div>
+                    </section>
+
+                    {/* Premium Gallery Section - Taj Carousel Style */}
+                    <section data-gallery-section style={{ position: 'relative', backgroundColor: '#faf9f6', paddingTop: '3.5rem', paddingBottom: '6rem', overflow: 'hidden' }}>
+                        {/* Dynamic Background — Blurred focus image */}
+                        <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            zIndex: 0,
+                            opacity: 0.4,
+                            transition: 'all 1s ease-in-out',
+                            filter: 'blur(60px) saturate(1.2)',
+                            pointerEvents: 'none'
+                        }}>
+                            {galleryImages.length > 0 && (
                                 <img
-                                    src={getImageUrl(image.image_url)}
-                                    alt={image.caption || 'Gallery Image'}
+                                    src={getImageUrl(galleryImages[galleryIndex % galleryImages.length].image_url)}
+                                    alt="Background"
                                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                    onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
                                 />
-                            </div>
-                            {/* Content Area */}
-                            <div style={{ padding: '2.5rem', textAlign: 'center' }}>
-                                <h3 style={{ fontFamily: 'var(--font-body)', fontSize: '0.7rem', fontWeight: '600', letterSpacing: '0.25em', textTransform: 'uppercase', color: 'var(--gold)', marginBottom: '1rem' }}>
-                                    {image.caption ? image.caption.split(' ')[0] : 'Experience'}
-                                </h3>
-                                <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.88rem', color: '#6b6b75', lineHeight: '1.7', marginBottom: '1.5rem', maxWidth: '400px', mx: 'auto' }}>
-                                    {image.caption || "Discover the intricate details and breathtaking landscapes that make our resort a sanctuary of peace."}
-                                </p>
-                                <button style={{ background: 'none', border: 'none', color: 'var(--gold)', fontSize: '0.65rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase', cursor: 'pointer', padding: 0 }}>
-                                    MORE &rsaquo;
-                                </button>
-                            </div>
+                            )}
+                            <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.4)' }} />
                         </div>
-                    ))}
-                </div>
 
-                {/* Navigation Arrows */}
-                <button
-                    onClick={() => setGalleryIndex(prev => (prev > 0 ? prev - 1 : galleryImages.length - 1))}
-                    style={{ position: 'absolute', left: '40px', top: '200px', width: '48px', height: '48px', borderRadius: '50%', border: '1px solid rgba(10,10,15,0.1)', background: '#ffffff', color: 'var(--obsidian)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10, transition: 'all 0.3s' }}
-                    className="hover:bg-gold-warm hover:text-white"
-                >
-                    &lsaquo;
-                </button>
-                <button
-                    onClick={() => setGalleryIndex(prev => (prev < galleryImages.length - 1 ? prev + 1 : 0))}
-                    style={{ position: 'absolute', right: '40px', top: '200px', width: '48px', height: '48px', borderRadius: '50%', border: '1px solid rgba(10,10,15,0.1)', background: '#ffffff', color: 'var(--obsidian)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10, transition: 'all 0.3s' }}
-                    className="hover:bg-gold-warm hover:text-white"
-                >
-                    &rsaquo;
-                </button>
-            </div>
-        ) : (
-            <p style={{ textAlign: 'center', padding: '4rem 0', fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: '#9a9a9a' }}>No gallery images available at the moment.</p>
-        )}
-    </div>
-</section>
+                        <div className="w-full mx-auto px-4 sm:px-8 md:px-16" style={{ position: 'relative', zIndex: 1 }}>
+                            {/* Taj 2-column section header */}
+                            <div className="taj-section-header">
+                                <div className="taj-section-header__left">
+                                    <span className="taj-section-header__eyebrow">Captured Moments</span>
+                                    <h2 className="taj-section-header__title">Explore the<br />Timeless Beauty</h2>
+                                </div>
+                                <div className="taj-section-header__right" style={{ textAlign: 'right', fontSize: '0.92rem', color: '#6b6b75', lineHeight: '1.8' }}>
+                                    Witness the charm of our resort's stunning views and unforgettable experiences — each frame a testament to the serene elegance that defines our forest retreat.
+                                </div>
+                            </div>
 
-{/* Nearby Attractions Feature Banner */ }
-{
-    totalNearbyAttractionBanners > 0 && (
-        <section className="relative w-full h-[520px] md:h-[620px] overflow-hidden rounded-3xl mt-20 mb-10 bg-[#0f5132]/5">
-            {activeNearbyAttractionBanners.map((banner, index) => (
-                <div key={banner.id} className="absolute inset-0">
-                    <img
-                        src={getImageUrl(banner.image_url)}
-                        alt={banner.title}
-                        className={`absolute inset-0 w-full h-full object-cover transition-all duration-[9000ms] ease-in-out ${index === currentAttractionBannerIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-110'}`}
-                        style={{
-                            animationDelay: `${index * 2}s`,
-                            animationDirection: index % 2 === 0 ? 'alternate' : 'alternate-reverse'
-                        }}
-                        onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/60 to-black/20" />
-                </div>
-            ))}
-            {totalNearbyAttractionBanners > 0 && (
-                <div className="relative z-10 h-full flex items-center justify-center px-4 sm:px-6 lg:px-8 text-center text-white">
-                    <div className="max-w-4xl mx-auto space-y-6">
-                        <div className="inline-flex items-center gap-2 px-6 py-2 bg-white/15 backdrop-blur-sm rounded-full border border-white/30 uppercase tracking-[0.35em] text-xs font-semibold">
-                            ✦ Nearby Attractions ✦
+                            {/* Gallery Carousel */}
+                            {galleryImages.length > 0 ? (
+                                <div
+                                    style={{ position: 'relative', marginTop: '2rem', paddingBottom: '2rem' }}
+                                    onMouseEnter={() => setIsGalleryHovered(true)}
+                                    onMouseLeave={() => setIsGalleryHovered(false)}
+                                >
+                                    <div style={{ overflow: 'hidden', padding: '4rem 1.5rem' }}>
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: '2.5rem',
+                                            transition: isGalleryHovered ? 'none' : 'transform 1.2s cubic-bezier(0.19, 1, 0.22, 1)',
+                                            transform: `translateX(calc(-${galleryIndex} * (100% / 3 + 2.5rem / 3)))`
+                                        }}>
+                                            {[...galleryImages, ...galleryImages, ...galleryImages].map((image, idx) => {
+                                                const isCenter = idx === (galleryIndex + 1);
+                                                const isActive = (idx >= galleryIndex && idx <= galleryIndex + 2);
+                                                return (
+                                                    <div
+                                                        key={`${image.id}-${idx}`}
+                                                        className="group"
+                                                        style={{
+                                                            position: 'relative',
+                                                            cursor: 'pointer',
+                                                            flex: '0 0 calc((100% - 5rem) / 3)',
+                                                            maxWidth: 'calc((100% - 5rem) / 3)',
+                                                            transition: 'all 1s cubic-bezier(0.19, 1, 0.22, 1)',
+                                                            transform: isCenter ? 'scale(1.15)' : 'scale(1)',
+                                                            zIndex: isCenter ? 5 : 1,
+                                                            opacity: isActive ? 1 : 0.3,
+                                                            filter: isCenter ? 'none' : 'grayscale(15%) brightness(95%)',
+                                                            background: '#ffffff',
+                                                            boxShadow: isCenter ? '0 15px 45px rgba(10,10,15,0.18)' : '0 8px 32px rgba(10,10,15,0.08)',
+                                                            overflow: 'hidden'
+                                                        }}
+                                                    >
+                                                        {/* Image Area */}
+                                                        <div style={{ position: 'relative', height: '380px', overflow: 'hidden', background: '#f5f5f5' }}>
+                                                            <img
+                                                                src={getImageUrl(image.image_url)}
+                                                                alt={image.caption || 'Gallery Image'}
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.8s' }}
+                                                                className="group-hover:scale-110"
+                                                                onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                            />
+                                                        </div>
+                                                        {/* Content Area */}
+                                                        <div style={{ padding: '1.8rem 1.5rem 2rem', textAlign: 'center' }}>
+                                                            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.7rem', fontWeight: '600', letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--obsidian)', marginBottom: '0.8rem' }}>
+                                                                {image.caption ? (image.caption.split(' ')[0] || 'Experience') : 'Experience'}
+                                                            </h3>
+                                                            <div style={{ height: '1px', width: '1.25rem', background: 'var(--gold-warm)', margin: '0 auto 1rem', opacity: 0.7 }} />
+                                                            <div style={{ color: 'var(--gold)', fontSize: '0.62rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
+                                                                EXPLORE &rsaquo;
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    {/* Navigation Arrows */}
+                                    <button
+                                        onClick={prevGallery}
+                                        style={{ position: 'absolute', left: '40px', top: '200px', width: '48px', height: '48px', borderRadius: '50%', border: '1px solid rgba(10,10,15,0.1)', background: '#ffffff', color: 'var(--obsidian)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10, transition: 'all 0.3s' }}
+                                        className="hover:bg-gold-warm hover:text-white"
+                                    >
+                                        &lsaquo;
+                                    </button>
+                                    <button
+                                        onClick={nextGallery}
+                                        style={{ position: 'absolute', right: '40px', top: '200px', width: '48px', height: '48px', borderRadius: '50%', border: '1px solid rgba(10,10,15,0.1)', background: '#ffffff', color: 'var(--obsidian)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10, transition: 'all 0.3s' }}
+                                        className="hover:bg-gold-warm hover:text-white"
+                                    >
+                                        &rsaquo;
+                                    </button>
+                                </div>
+                            ) : (
+                                <p style={{ textAlign: 'center', padding: '4rem 0', fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: '#9a9a9a' }}>No gallery images available at the moment.</p>
+                            )}
                         </div>
-                        <h2 className="text-3xl md:text-5xl font-extrabold leading-tight drop-shadow-xl">
-                            {activeNearbyAttractionBanners[currentAttractionBannerIndex]?.title || 'Explore the Destination'}
-                        </h2>
-                        <p className="text-base md:text-xl text-white/85 leading-relaxed drop-shadow-lg">
-                            {activeNearbyAttractionBanners[currentAttractionBannerIndex]?.subtitle || 'Discover the most captivating sights surrounding our resort.'}
-                        </p>
-                        {/* Map button displayed in main Nearby Attractions section */}
-                    </div>
-                </div>
-            )}
-            {totalNearbyAttractionBanners > 1 && (
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 z-20">
-                    {activeNearbyAttractionBanners.map((_, index) => (
-                        <button
-                            key={index}
-                            onClick={() => setCurrentAttractionBannerIndex(index)}
-                            className={`transition-all duration-300 ${index === currentAttractionBannerIndex
-                                ? "w-12 h-1 bg-[#d8b471] rounded-full shadow-[0_0_12px_rgba(216,180,113,0.6)]"
-                                : "w-8 h-1 bg-white/40 hover:bg-white/70 rounded-full"
-                                }`}
-                            aria-label={`Show attraction ${index + 1}`}
-                            type="button"
-                        />
-                    ))}
-                </div>
-            )}
-        </section>
-    )
-}
+                    </section>
 
-{/* Nearby Attractions Section - Mountain Shadows Style */ }
-{
-    nearbyAttractions.length > 0 && nearbyAttractions.some(a => a.is_active) && (
-        <section className={`bg-gradient-to-b ${theme.bgCard} ${theme.bgSecondary} py-20 transition-colors duration-500`}>
-            <div className="w-full mx-auto px-2 sm:px-4 md:px-6">
-                <div className="text-center mb-16">
-                    <span className="inline-block px-6 py-2 bg-[#0f5132]/10 text-[#0f5132] text-sm font-semibold tracking-[0.35em] uppercase rounded-full border border-[#d8c9ac] mb-4">
-                        ✦ Explore ✦
-                    </span>
-                    <h2 className={`text-4xl md:text-5xl font-extrabold ${theme.textPrimary} mb-4`}>
-                        NEARBY ATTRACTIONS
-                    </h2>
-                </div>
-
-                {/* Split Layout - Image Left, Text Right or vice versa */}
-                <div className="space-y-12">
-                    {nearbyAttractions.filter(attr => attr.is_active).map((attraction, index) => (
-                        <div
-                            key={attraction.id}
-                            className={`${theme.bgCard} rounded-3xl overflow-hidden shadow-2xl border ${theme.border} transition-all duration-500 hover:shadow-3xl`}
-                        >
-                            <div className={`flex flex-col ${index % 2 === 0 ? 'md:flex-row' : 'md:flex-row-reverse'} items-stretch`}>
-                                {/* Image Section */}
-                                <div className="w-full md:w-1/2 overflow-hidden flex items-center justify-center">
+                    {/* Nearby Attractions Feature Banner */}
+                    {totalNearbyAttractionBanners > 0 ? (
+                        <section className="relative w-full h-[520px] md:h-[620px] overflow-hidden rounded-3xl mt-20 mb-10 bg-[#0f5132]/5">
+                            {activeNearbyAttractionBanners.map((banner, index) => (
+                                <div key={banner.id} className="absolute inset-0">
                                     <img
-                                        src={getImageUrl(attraction.image_url)}
-                                        alt={attraction.title}
-                                        className="w-full h-auto object-contain transition-transform duration-700 hover:scale-105"
+                                        src={getImageUrl(banner.image_url)}
+                                        alt={banner.title}
+                                        className={`absolute inset-0 w-full h-full object-cover transition-all duration-[9000ms] ease-in-out ${index === currentAttractionBannerIndex ? 'opacity-100 scale-100' : 'opacity-0 scale-110'}`}
+                                        style={{
+                                            animationDelay: `${index * 2}s`,
+                                            animationDirection: index % 2 === 0 ? 'alternate' : 'alternate-reverse'
+                                        }}
                                         onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
                                     />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/60 to-black/20" />
+                                </div>
+                            ))}
+                            <div className="relative z-10 h-full flex items-center justify-center px-4 sm:px-6 lg:px-8 text-center text-white">
+                                <div className="max-w-4xl mx-auto space-y-6">
+                                    <div className="inline-flex items-center gap-2 px-6 py-2 bg-white/15 backdrop-blur-sm rounded-full border border-white/30 uppercase tracking-[0.35em] text-xs font-semibold">
+                                        ✦ Nearby Attractions ✦
+                                    </div>
+                                    <h2 className="text-3xl md:text-5xl font-extrabold leading-tight drop-shadow-xl">
+                                        {activeNearbyAttractionBanners[currentAttractionBannerIndex]?.title || 'Explore the Destination'}
+                                    </h2>
+                                    <p className="text-base md:text-xl text-white/85 leading-relaxed drop-shadow-lg">
+                                        {activeNearbyAttractionBanners[currentAttractionBannerIndex]?.subtitle || 'Discover the most captivating sights surrounding our resort.'}
+                                    </p>
+                                </div>
+                            </div>
+                            {totalNearbyAttractionBanners > 1 ? (
+                                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2 z-20">
+                                    {activeNearbyAttractionBanners.map((_, index) => (
+                                        <button
+                                            key={index}
+                                            onClick={() => setCurrentAttractionBannerIndex(index)}
+                                            className={`transition-all duration-300 ${index === currentAttractionBannerIndex
+                                                ? "w-12 h-1 bg-[#d8b471] rounded-full shadow-[0_0_12px_rgba(216,180,113,0.6)]"
+                                                : "w-8 h-1 bg-white/40 hover:bg-white/70 rounded-full"
+                                                }`}
+                                            aria-label={`Show attraction ${index + 1}`}
+                                        />
+                                    ))}
+                                </div>
+                            ) : null}
+                        </section>
+                    ) : null}
+
+                    {/* Nearby Attractions Section - Taj Carousel Style */}
+                    {nearbyAttractions.length > 0 && nearbyAttractions.some(a => a.is_active) && (
+                        <section style={{ position: 'relative', backgroundColor: '#faf9f6', paddingTop: '3.5rem', paddingBottom: '7rem', overflow: 'hidden' }}>
+                            {/* Dynamic Background — Blurred focus image */}
+                            <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                zIndex: 0,
+                                opacity: 0.4,
+                                transition: 'all 1s ease-in-out',
+                                filter: 'blur(60px) saturate(1.2)',
+                                pointerEvents: 'none'
+                            }}>
+                                {(() => {
+                                    const activeAttractions = nearbyAttractions.filter(a => a.is_active);
+                                    if (activeAttractions.length === 0) return null;
+                                    const targetIndex = (attractionCarouselIndex + 1) % activeAttractions.length;
+                                    const fallbackIndex = attractionCarouselIndex % activeAttractions.length;
+                                    return (
+                                        <img
+                                            src={getImageUrl(activeAttractions[targetIndex]?.image_url || activeAttractions[fallbackIndex]?.image_url)}
+                                            alt="Background"
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        />
+                                    );
+                                })()}
+                                <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(255,255,255,0.4)' }} />
+                            </div>
+
+                            <div className="w-full mx-auto px-4 sm:px-8 md:px-16" style={{ position: 'relative', zIndex: 1 }}>
+                                {/* Taj 2-column section header */}
+                                <div className="taj-section-header">
+                                    <div className="taj-section-header__left">
+                                        <span className="taj-section-header__eyebrow">Local Discovery</span>
+                                        <h2 className="taj-section-header__title">Nearby<br />Attractions</h2>
+                                    </div>
+                                    <div className="taj-section-header__right" style={{ textAlign: 'right', fontSize: '0.92rem', color: '#6b6b75', lineHeight: '1.8' }}>
+                                        Embark on a voyage of discovery through the cultural tapestry and natural wonders that envelop our retreat. From ancient temples to hidden waterfalls, the soul of the region awaits.
+                                    </div>
                                 </div>
 
-                                {/* Content Section */}
-                                <div className={`w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center ${theme.bgCard}`}>
-                                    <h3 className={`text-3xl md:text-4xl font-extrabold ${theme.textPrimary} mb-4 leading-tight`}>
-                                        {attraction.title}
-                                    </h3>
-                                    <div className="w-20 h-1 bg-gradient-to-r from-[#0f5132] via-[#1a7042] to-[#c99c4e] mb-6"></div>
-                                    <p className={`text-base md:text-lg ${theme.textSecondary} leading-relaxed`}>
-                                        {attraction.description}
-                                    </p>
-                                    {attraction.map_link && (
-                                        <a
-                                            href={formatUrl(attraction.map_link)}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="mt-8 inline-flex items-center gap-3 self-start px-6 py-3 bg-[#0f5132] text-white font-semibold rounded-full shadow-lg hover:shadow-xl transition-all duration-300"
+                                <div
+                                    style={{ position: 'relative', marginTop: '2.5rem', padding: '0 2rem' }}
+                                    onMouseEnter={() => setIsAttractionHovered(true)}
+                                    onMouseLeave={() => setIsAttractionHovered(false)}
+                                >
+                                    {/* Navigation Buttons */}
+                                    {nearbyAttractions.filter(a => a.is_active).length > 3 && (
+                                        <>
+                                            <button
+                                                onClick={prevAttraction}
+                                                style={{ position: 'absolute', left: '-1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gold)', zIndex: 10, padding: '1rem' }}
+                                                className="hover:scale-125 transition-transform hidden lg:block"
+                                            >
+                                                <ChevronLeft size={52} strokeWidth={1} />
+                                            </button>
+                                            <button
+                                                onClick={nextAttraction}
+                                                style={{ position: 'absolute', right: '-1rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gold)', zIndex: 10, padding: '1rem' }}
+                                                className="hover:scale-125 transition-transform hidden lg:block"
+                                            >
+                                                <ChevronRight size={52} strokeWidth={1} />
+                                            </button>
+                                        </>
+                                    )}
+
+                                    <div style={{ overflow: 'hidden', padding: '4rem 1.5rem' }}>
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: '2.5rem',
+                                            transition: isAttractionHovered ? 'none' : 'transform 1.2s cubic-bezier(0.19, 1, 0.22, 1)',
+                                            transform: `translateX(calc(-${attractionCarouselIndex} * (100% / 3 + 2.5rem / 3)))`
+                                        }}>
+                                            {[...nearbyAttractions.filter(a => a.is_active), ...nearbyAttractions.filter(a => a.is_active), ...nearbyAttractions.filter(a => a.is_active)].map((attraction, index) => {
+                                                const counts = nearbyAttractions.filter(a => a.is_active).length;
+                                                const isCenter = index === (attractionCarouselIndex + 1);
+                                                const isActive = (index >= attractionCarouselIndex && index <= attractionCarouselIndex + 2);
+
+                                                return (
+                                                    <div
+                                                        key={`${attraction.id}-${index}`}
+                                                        className="group"
+                                                        style={{
+                                                            position: 'relative',
+                                                            cursor: 'pointer',
+                                                            flex: '0 0 calc((100% - 5rem) / 3)',
+                                                            maxWidth: 'calc((100% - 5rem) / 3)',
+                                                            transition: 'all 1s cubic-bezier(0.19, 1, 0.22, 1)',
+                                                            transform: isCenter ? 'scale(1.15)' : 'scale(1)',
+                                                            zIndex: isCenter ? 5 : 1,
+                                                            opacity: isActive ? 1 : 0.3,
+                                                            filter: isCenter ? 'none' : 'grayscale(15%) brightness(95%)',
+                                                            margin: isCenter ? '0 0.5rem' : '0'
+                                                        }}
+                                                        onClick={() => attraction.map_link && window.open(formatUrl(attraction.map_link), '_blank')}
+                                                    >
+                                                        {/* Image container */}
+                                                        <div style={{
+                                                            position: 'relative',
+                                                            height: '480px',
+                                                            overflow: 'hidden',
+                                                            background: '#ffffff',
+                                                            boxShadow: isCenter ? '0 30px 60px rgba(10,10,15,0.35)' : '0 10px 30px rgba(0,0,0,0.1)',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                        }}>
+                                                            <img
+                                                                src={getImageUrl(attraction.image_url)}
+                                                                alt={attraction.title}
+                                                                style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 1s cubic-bezier(0.19, 1, 0.22, 1)' }}
+                                                                className="group-hover:scale-[1.08]"
+                                                                onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                            />
+                                                            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(10,10,15,0.4) 0%, transparent 60%)', pointerEvents: 'none' }} />
+                                                        </div>
+
+                                                        {/* Protruding Caption Plate */}
+                                                        <div style={{
+                                                            position: 'relative',
+                                                            marginTop: '-3rem',
+                                                            marginLeft: '0',
+                                                            marginRight: '0',
+                                                            background: '#ffffff',
+                                                            padding: '1.8rem 2rem 2rem',
+                                                            boxShadow: isCenter ? '0 15px 45px rgba(10,10,15,0.15)' : '0 8px 32px rgba(10,10,15,0.08)',
+                                                            transition: 'all 0.6s cubic-bezier(0.19, 1, 0.22, 1)',
+                                                            textAlign: 'center'
+                                                        }}>
+                                                            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.9rem', fontWeight: '500', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--obsidian)', marginBottom: '0.8rem' }}>
+                                                                {attraction.title}
+                                                            </h3>
+                                                            {isCenter && (
+                                                                <div style={{ height: '1px', width: '40px', background: 'var(--gold)', margin: '0 auto 1.2rem', opacity: 0.6 }} />
+                                                            )}
+                                                            <div style={{ color: 'var(--gold)', fontSize: '0.65rem', fontWeight: '600', letterSpacing: '0.2em', textTransform: 'uppercase', marginTop: '0.8rem' }}>
+                                                                {attraction.map_link ? 'EXPLORE ON MAP >' : 'MORE >'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    )}
+
+
+                    {/* Testimonials Section - Taj Style */}
+                    <section data-reviews-section style={{ backgroundColor: '#faf7f0', paddingTop: '5.5rem', paddingBottom: '7rem' }}>
+                        <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
+                            {/* Taj 2-column section header */}
+                            <div className="taj-section-header">
+                                <div className="taj-section-header__left">
+                                    <span className="taj-section-header__eyebrow">Guest Verbatim</span>
+                                    <h2 className="taj-section-header__title">What Our<br />Guests Say</h2>
+                                </div>
+                                <div className="taj-section-header__right">
+                                    Every séjour is a story of personal connection and refined hospitality. Discover the experiences that linger in the memories of our most discerning travelers.
+                                </div>
+                            </div>
+
+                            <div className="w-full overflow-hidden mt-12">
+                                <div className="flex gap-8 animate-[auto-scroll-bobbing-reverse_90s_linear_infinite] hover:[animation-play-state:paused]">
+                                    {reviews.length > 0 ? [...reviews, ...reviews].map((review, index) => (
+                                        <div
+                                            key={`${review.id}-${index}`}
+                                            style={{
+                                                flex: '0 0 400px',
+                                                background: '#ffffff',
+                                                padding: '2.5rem',
+                                                boxShadow: '0 12px 32px rgba(10,10,15,0.06)',
+                                                borderTop: '3px solid var(--gold-warm)'
+                                            }}
                                         >
-                                            <span className="flex items-center justify-center w-9 h-9 rounded-full bg-white text-[#0f5132]">
-                                                <SiGooglemaps className="w-5 h-5" />
-                                            </span>
-                                            <span>Open in Google Maps</span>
-                                        </a>
+                                            <div style={{ display: 'flex', gap: '0.2rem', marginBottom: '1.25rem' }}>
+                                                {[...Array(5)].map((_, i) => (
+                                                    <Star
+                                                        key={i}
+                                                        className={`w-3 h-3 ${i < review.rating ? 'fill-[var(--gold)] text-[var(--gold)]' : 'text-[#e5e5e5]'}`}
+                                                    />
+                                                ))}
+                                            </div>
+                                            <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.92rem', color: 'var(--obsidian)', fontStyle: 'italic', lineHeight: '1.8', marginBottom: '1.5rem' }}>
+                                                {`"${review.comment}"`}
+                                            </p>
+                                            <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', fontWeight: '600', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a9a9a' }}>
+                                                — {review.guest_name}
+                                            </p>
+                                        </div>
+                                    )) : (
+                                        <p style={{ textAlign: 'center', width: '100%', fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: '#9a9a9a' }}>
+                                            No reviews available.
+                                        </p>
                                     )}
                                 </div>
                             </div>
                         </div>
-                    ))}
-                </div>
-            </div>
-        </section>
-    )
-}
+                    </section>
+                </main>
 
+                {/* Floating UI Elements */}
+                <button
+                    onClick={scrollToTop}
+                    className={`fixed bottom-8 right-8 p-3 rounded-full ${theme.buttonBg} ${theme.buttonText} shadow-lg transition-all duration-300 ${showBackToTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}
+                    aria-label="Back to Top"
+                >
+                    <ChevronUp className="w-6 h-6" />
+                </button>
 
-{/* Testimonials Section - Taj Style */ }
-<section data-reviews-section style={{ backgroundColor: '#faf7f0', paddingTop: '5.5rem', paddingBottom: '7rem' }}>
-    <div className="w-full mx-auto px-4 sm:px-8 md:px-16">
-        {/* Taj 2-column section header */}
-        <div className="taj-section-header">
-            <div className="taj-section-header__left">
-                <span className="taj-section-header__eyebrow">Guest Verbatim</span>
-                <h2 className="taj-section-header__title">What Our<br />Guests Say</h2>
-            </div>
-            <div className="taj-section-header__right">
-                Every séjour is a story of personal connection and refined hospitality. Discover the experiences that linger in the memories of our most discerning travelers.
-            </div>
-        </div>
+                <button onClick={toggleChat} className={`fixed bottom-8 left-8 p-4 rounded-full ${theme.buttonBg} ${theme.buttonText} shadow-lg transition-all duration-300 z-50 ${theme.buttonHover}`} aria-label="Open Chat">
+                    <MessageSquare className="w-6 h-6" />
+                </button>
 
-        <div className="w-full overflow-hidden mt-12">
-            <div className="flex gap-8 animate-[auto-scroll-bobbing-reverse_90s_linear_infinite] hover:[animation-play-state:paused]">
-                {reviews.length > 0 ? [...reviews, ...reviews].map((review, index) => (
-                    <div
-                        key={`${review.id}-${index}`}
-                        style={{
-                            flex: '0 0 400px',
-                            background: '#ffffff',
-                            padding: '2.5rem',
-                            boxShadow: '0 12px 32px rgba(10,10,15,0.06)',
-                            borderTop: '3px solid var(--gold-warm)'
-                        }}
-                    >
-                        <div style={{ display: 'flex', gap: '0.2rem', marginBottom: '1.25rem' }}>
-                            {[...Array(5)].map((_, i) => (
-                                <Star
-                                    key={i}
-                                    className={`w-3 h-3 ${i < review.rating ? 'fill-[var(--gold)] text-[var(--gold)]' : 'text-[#e5e5e5]'}`}
-                                />
-                            ))}
-                        </div>
-                        <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.92rem', color: 'var(--obsidian)', fontStyle: 'italic', lineHeight: '1.8', marginBottom: '1.5rem' }}>
-                            {`"${review.comment}"`}
-                        </p>
-                        <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.65rem', fontWeight: '600', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#9a9a9a' }}>
-                            — {review.guest_name}
-                        </p>
-                    </div>
-                )) : (
-                    <p style={{ textAlign: 'center', width: '100%', fontFamily: 'var(--font-body)', fontSize: '0.78rem', color: '#9a9a9a' }}>
-                        No reviews available.
-                    </p>
-                )}
-            </div>
-        </div>
-    </div>
-</section>
-                </main >
-
-    {/* Floating UI Elements */ }
-    < button onClick = { scrollToTop } className = {`fixed bottom-8 right-8 p-3 rounded-full ${theme.buttonBg} ${theme.buttonText} shadow-lg transition-all duration-300 ${showBackToTop ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`} aria - label="Back to Top" >
-        <ChevronUp className="w-6 h-6" />
-                </button >
-
-    <button onClick={toggleChat} className={`fixed bottom-8 left-8 p-4 rounded-full ${theme.buttonBg} ${theme.buttonText} shadow-lg transition-all duration-300 z-50 ${theme.buttonHover}`} aria-label="Open Chat">
-        <MessageSquare className="w-6 h-6" />
-    </button>
-
-{/* AI Concierge Chat Modal */ }
-{
-    isChatOpen && (
-        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-end justify-center">
-            <div className={`w-full max-w-lg h-3/4 md:h-4/5 ${theme.chatBg} rounded-t-3xl shadow-2xl flex flex-col`}>
-                <div className={`${theme.chatHeaderBg} p-4 rounded-t-3xl flex items-center justify-between border-b ${theme.chatInputBorder}`}>
-                    <h3 className="text-lg font-bold flex items-center"><MessageSquare className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> AI Concierge</h3>
-                    <button onClick={toggleChat} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
-                </div>
-                <div ref={chatMessagesRef} className="flex-1 p-4 overflow-y-auto space-y-4">
-                    {chatHistory.map((msg, index) => (
-                        <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                            <div className={`p-3 rounded-xl max-w-xs md:max-w-md shadow-lg ${msg.role === 'user' ? `${theme.chatUserBg} ${theme.chatUserText} rounded-br-none` : `${theme.chatModelBg} ${theme.chatModelText} rounded-bl-none`}`}>
-                                <p className="text-sm break-words">{msg.parts[0].text}</p>
-                            </div>
-                        </div>
-                    ))}
-                    {isChatLoading && (
-                        <div className="flex justify-start">
-                            <div className={`p-3 rounded-xl ${theme.chatModelBg} shadow-lg`}>
-                                <div className="flex items-center space-x-2 animate-bounce-dot">
-                                    <div className={`w-2 h-2 ${theme.chatLoaderBg} rounded-full`} style={{ animationDelay: '0s' }}></div>
-                                    <div className={`w-2 h-2 ${theme.chatLoaderBg} rounded-full`} style={{ animationDelay: '0.2s' }}></div>
-                                    <div className={`w-2 h-2 ${theme.chatLoaderBg} rounded-full`} style={{ animationDelay: '0.4s' }}></div>
+                {/* AI Concierge Chat Modal */}
+                {
+                    isChatOpen && (
+                        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-end justify-center">
+                            <div className={`w-full max-w-lg h-3/4 md:h-4/5 ${theme.chatBg} rounded-t-3xl shadow-2xl flex flex-col`}>
+                                <div className={`${theme.chatHeaderBg} p-4 rounded-t-3xl flex items-center justify-between border-b ${theme.chatInputBorder}`}>
+                                    <h3 className="text-lg font-bold flex items-center"><MessageSquare className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> AI Concierge</h3>
+                                    <button onClick={toggleChat} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
                                 </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-                <form onSubmit={handleSendMessage} className={`p-4 border-t ${theme.chatInputBorder} ${theme.chatHeaderBg} flex items-center`}>
-                    <input type="text" value={userMessage} onChange={(e) => setUserMessage(e.target.value)} placeholder="Ask me anything..."
-                        className={`flex-1 p-3 rounded-full ${theme.chatInputBg} ${theme.textPrimary} ${theme.chatInputPlaceholder} focus:outline-none focus:ring-2 focus:ring-amber-500`} />
-                    <button type="submit" className={`ml-2 p-3 rounded-full ${theme.buttonBg} ${theme.buttonText} ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={!userMessage.trim() || isChatLoading}>
-                        <Send className="w-5 h-5" />
-                    </button>
-                </form>
-            </div>
-        </div>
-    )
-}
-
-{/* General Booking Modal - Date Selection First */ }
-{
-    isGeneralBookingOpen && (
-        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className={`w-full max-w-md ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col`}>
-                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
-                    <h3 className="text-lg font-bold flex items-center"><BedDouble className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Select Your Dates</h3>
-                    <button onClick={() => { setIsGeneralBookingOpen(false); setShowAmenities(false); }} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
-                </div>
-                <div className="p-6 space-y-4">
-                    <p className={`${theme.textSecondary} text-center mb-4`}>Select your check-in and check-out dates to view available rooms</p>
-                    <div className="flex space-x-4">
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-in Date</label>
-                            <input
-                                type="date"
-                                name="check_in"
-                                value={bookingData.check_in}
-                                onChange={handleRoomBookingChange}
-                                min={new Date().toISOString().split('T')[0]}
-                                required
-                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-[#0f5132] transition-colors`}
-                            />
-                        </div>
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-out Date</label>
-                            <input
-                                type="date"
-                                name="check_out"
-                                value={bookingData.check_out}
-                                onChange={handleRoomBookingChange}
-                                min={bookingData.check_in || new Date().toISOString().split('T')[0]}
-                                required
-                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-[#0f5132] transition-colors`}
-                            />
-                        </div>
-                    </div>
-                    {bookingData.check_in && bookingData.check_out && (
-                        <div className="pt-4 space-y-3 border-top border-gray-200 dark:border-neutral-700">
-                            <p className={`text-sm ${theme.textSecondary} text-center`}>Continue with booking:</p>
-                            <button
-                                onClick={() => { setIsGeneralBookingOpen(false); setShowAmenities(false); setIsRoomBookingFormOpen(true); }}
-                                className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors flex items-center justify-center space-x-2`}
-                            >
-                                <BedDouble className="w-5 h-5" />
-                                <span>Book a Room</span>
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setIsGeneralBookingOpen(false);
-                                    setShowAmenities(false);
-                                    setPackageBookingData(prev => ({
-                                        ...prev,
-                                        check_in: bookingData.check_in || prev.check_in || '',
-                                        check_out: bookingData.check_out || prev.check_out || ''
-                                    }));
-                                    setIsPackageSelectionOpen(true);
-                                }}
-                                className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors flex items-center justify-center space-x-2`}
-                            >
-                                <Package className="w-5 h-5" />
-                                <span>Book a Package</span>
-                            </button>
-                            <button
-                                onClick={() => setShowAmenities(prev => !prev)}
-                                className="w-full py-3 rounded-full bg-white text-[#0f5132] font-bold shadow-lg hover:shadow-xl transition-colors flex items-center justify-center space-x-2 border border-[#d8c9ac]"
-                            >
-                                <Droplet className="w-5 h-5 text-[#0f5132]" />
-                                <span>{showAmenities ? "Hide Amenities" : "View Amenities"}</span>
-                            </button>
-                        </div>
-                    )}
-                    {showAmenities && (
-                        <div className="mt-4 space-y-3 border-t border-gray-200 dark:border-neutral-700 pt-4">
-                            <h4 className="text-sm font-semibold text-center text-[#0f5132] uppercase tracking-widest">
-                                Resort Amenities
-                            </h4>
-                            {services && services.length > 0 ? (
-                                <div className="max-h-48 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    {services.map((service) => (
-                                        <div
-                                            key={service.id}
-                                            className="flex items-start space-x-3 rounded-2xl bg-white/80 border border-[#d8c9ac] px-4 py-3 shadow-sm"
-                                        >
-                                            <div className="flex-shrink-0 mt-1 text-[#0f5132]">
-                                                <ConciergeBell className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-semibold text-[#0f5132]">{service.name}</p>
-                                                {service.description && (
-                                                    <p className="text-xs text-[#4f6f62] mt-1 line-clamp-2">
-                                                        {service.description}
-                                                    </p>
-                                                )}
+                                <div ref={chatMessagesRef} className="flex-1 p-4 overflow-y-auto space-y-4">
+                                    {chatHistory.map((msg, index) => (
+                                        <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`p-3 rounded-xl max-w-xs md:max-w-md shadow-lg ${msg.role === 'user' ? `${theme.chatUserBg} ${theme.chatUserText} rounded-br-none` : `${theme.chatModelBg} ${theme.chatModelText} rounded-bl-none`}`}>
+                                                <p className="text-sm break-words">{msg.parts[0].text}</p>
                                             </div>
                                         </div>
                                     ))}
-                                </div>
-                            ) : (
-                                <p className="text-center text-sm text-[#4f6f62] bg-white/70 rounded-2xl px-4 py-6 border border-dashed border-[#d8c9ac]">
-                                    Amenities information will be available soon. Please contact concierge for more details.
-                                </p>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    )
-}
-
-{/* Room Booking Modal */ }
-{
-    isRoomBookingFormOpen && (
-        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-            <div className={`w-full max-w-lg ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col max-h-[90vh] my-8`}>
-                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
-                    <h3 className="text-lg font-bold flex items-center"><BedDouble className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Book a Room</h3>
-                    <button onClick={() => setIsRoomBookingFormOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
-                </div>
-                {/* Error message inside modal */}
-                {bannerMessage.text && bannerMessage.type === 'error' && (
-                    <div className={`mx-6 mt-4 p-3 rounded-lg bg-red-100 border border-red-300 text-red-700 text-sm flex items-center`}>
-                        <span className="mr-2">❌</span>
-                        {bannerMessage.text}
-                    </div>
-                )}
-                {/* Success message inside modal */}
-                {bannerMessage.text && bannerMessage.type === 'success' && (
-                    <div className={`mx-6 mt-4 p-3 rounded-lg bg-green-100 border border-green-300 text-green-700 text-sm flex items-center`}>
-                        <span className="mr-2">✅</span>
-                        {bannerMessage.text}
-                    </div>
-                )}
-                <form onSubmit={handleRoomBookingSubmit} className="p-4 space-y-4 overflow-y-auto">
-                    {/* Always show editable date inputs */}
-                    <div className="flex space-x-4">
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-in Date</label>
-                            <input
-                                type="date"
-                                name="check_in"
-                                value={bookingData.check_in || ''}
-                                onChange={handleRoomBookingChange}
-                                min={new Date().toISOString().split('T')[0]}
-                                required
-                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-[#0f5132] transition-colors`}
-                            />
-                        </div>
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-out Date</label>
-                            <input
-                                type="date"
-                                name="check_out"
-                                value={bookingData.check_out || ''}
-                                onChange={handleRoomBookingChange}
-                                min={bookingData.check_in || new Date().toISOString().split('T')[0]}
-                                required
-                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-[#0f5132] transition-colors`}
-                            />
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Available Rooms for Selected Dates</label>
-                        {!bookingData.check_in || !bookingData.check_out ? (
-                            <div className={`p-6 text-center rounded-xl ${theme.bgSecondary} border-2 border-dashed ${theme.border}`}>
-                                <BedDouble className={`w-10 h-10 ${theme.textSecondary} mx-auto mb-3`} />
-                                <p className={`text-sm ${theme.textSecondary}`}>Please select check-in and check-out dates above to see available rooms</p>
-                            </div>
-                        ) : (
-                            <>
-                                <p className={`text-xs ${theme.textSecondary} mb-2`}>Showing rooms available from {bookingData.check_in} to {bookingData.check_out}</p>
-                                <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-48 overflow-y-auto p-3 rounded-xl ${theme.bgSecondary}`}>
-                                    {rooms.length > 0 ? (
-                                        rooms.map(room => (
-                                            <div key={room.id} onClick={() => handleRoomSelection(room.id)}
-                                                className={`rounded-lg border-2 cursor-pointer transition-all duration-200 overflow-hidden ${bookingData.room_ids.includes(room.id) ? `${theme.buttonBg} ${theme.buttonText} border-transparent` : `${theme.bgCard} ${theme.textPrimary} ${theme.border} hover:border-[#c99c4e]`}`}
-                                            >
-                                                <img
-                                                    src={getImageUrl(room.image_url)}
-                                                    alt={room.type}
-                                                    className="w-full h-20 object-cover"
-                                                    onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                                                />
-                                                <div className="p-2 text-center">
-                                                    <p className="font-semibold text-xs">Room {room.number}</p>
-                                                    <p className="text-xs opacity-80">{room.type}</p>
-                                                    <p className="text-xs opacity-60 mt-1">Max: {room.adults}A, {room.children}C</p>
-                                                    <p className="text-xs font-bold mt-1">{formatCurrency(room.price)}</p>
+                                    {isChatLoading && (
+                                        <div className="flex justify-start">
+                                            <div className={`p-3 rounded-xl ${theme.chatModelBg} shadow-lg`}>
+                                                <div className="flex items-center space-x-2 animate-bounce-dot">
+                                                    <div className={`w-2 h-2 ${theme.chatLoaderBg} rounded-full`} style={{ animationDelay: '0s' }}></div>
+                                                    <div className={`w-2 h-2 ${theme.chatLoaderBg} rounded-full`} style={{ animationDelay: '0.2s' }}></div>
+                                                    <div className={`w-2 h-2 ${theme.chatLoaderBg} rounded-full`} style={{ animationDelay: '0.4s' }}></div>
                                                 </div>
                                             </div>
-                                        ))
-                                    ) : (
-                                        <div className="col-span-full text-center py-8 text-gray-500">
-                                            <BedDouble className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                                            <p className="text-sm font-semibold mb-1">No rooms available</p>
-                                            <p className="text-xs">No rooms are available for the selected dates. Please try different dates.</p>
                                         </div>
                                     )}
                                 </div>
-                            </>
-                        )}
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Full Name</label>
-                        <input type="text" name="guest_name" value={bookingData.guest_name} onChange={handleRoomBookingChange} placeholder="Enter your full name" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Email Address</label>
-                        <input type="email" name="guest_email" value={bookingData.guest_email} onChange={handleRoomBookingChange} placeholder="user@example.com" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Phone Number</label>
-                        <input type="tel" name="guest_mobile" value={bookingData.guest_mobile} onChange={handleRoomBookingChange} placeholder="Enter your mobile number" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="flex space-x-4">
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Adults</label>
-                            <input type="number" name="adults" value={bookingData.adults} onChange={handleRoomBookingChange} min="1" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                <form onSubmit={handleSendMessage} className={`p-4 border-t ${theme.chatInputBorder} ${theme.chatHeaderBg} flex items-center`}>
+                                    <input type="text" value={userMessage} onChange={(e) => setUserMessage(e.target.value)} placeholder="Ask me anything..."
+                                        className={`flex-1 p-3 rounded-full ${theme.chatInputBg} ${theme.textPrimary} ${theme.chatInputPlaceholder} focus:outline-none focus:ring-2 focus:ring-amber-500`} />
+                                    <button type="submit" className={`ml-2 p-3 rounded-full ${theme.buttonBg} ${theme.buttonText} ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={!userMessage.trim() || isChatLoading}>
+                                        <Send className="w-5 h-5" />
+                                    </button>
+                                </form>
+                            </div>
                         </div>
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Children</label>
-                            <input type="number" name="children" value={bookingData.children} onChange={handleRoomBookingChange} min="0" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                        </div>
-                    </div>
-                    <button type="submit" className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={isBookingLoading}>
-                        {isBookingLoading ? 'Booking...' : 'Confirm Booking'}
-                    </button>
-                    {bookingMessage.text && (
-                        <div className={`mt-4 p-3 rounded-xl text-center ${bookingMessage.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
-                            {bookingMessage.text}
-                        </div>
-                    )}
-                </form>
-            </div>
-        </div>
-    )
-}
+                    )
+                }
 
-{/* Package Booking Modal */ }
-{
-    isPackageBookingFormOpen && (
-        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-            <div className={`w-full max-w-lg ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col max-h-[90vh] my-8`}>
-                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
-                    <h3 className="text-lg font-bold flex items-center"><Package className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Book a Package</h3>
-                    <button onClick={() => setIsPackageBookingFormOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
-                </div>
-                {/* Error message inside modal */}
-                {bannerMessage.text && bannerMessage.type === 'error' && (
-                    <div className={`mx-6 mt-4 p-3 rounded-lg bg-red-100 border border-red-300 text-red-700 text-sm flex items-center`}>
-                        <span className="mr-2">❌</span>
-                        {bannerMessage.text}
-                    </div>
-                )}
-                {/* Success message inside modal */}
-                {bannerMessage.text && bannerMessage.type === 'success' && (
-                    <div className={`mx-6 mt-4 p-3 rounded-lg bg-green-100 border border-green-300 text-green-700 text-sm flex items-center`}>
-                        <span className="mr-2">✅</span>
-                        {bannerMessage.text}
-                    </div>
-                )}
-                <form onSubmit={handlePackageBookingSubmit} className="p-4 space-y-4 overflow-y-auto">
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Package ID</label>
-                        <input type="number" name="package_id" value={packageBookingData.package_id || ''} readOnly className={`w-full p-3 rounded-xl ${theme.placeholderBg} ${theme.placeholderText} focus:outline-none`} />
-                    </div>
-                    {/* Always show editable date inputs */}
-                    <div className="flex space-x-4">
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-in Date</label>
-                            <input
-                                type="date"
-                                name="check_in"
-                                value={packageBookingData.check_in || ''}
-                                onChange={handlePackageBookingChange}
-                                min={new Date().toISOString().split('T')[0]}
-                                required
-                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`}
-                            />
-                        </div>
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-out Date</label>
-                            <input
-                                type="date"
-                                name="check_out"
-                                value={packageBookingData.check_out || ''}
-                                onChange={handlePackageBookingChange}
-                                min={packageBookingData.check_in || new Date().toISOString().split('T')[0]}
-                                required
-                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`}
-                            />
-                        </div>
-                    </div>
-                    {/* Room Selection - Only show for room_type packages */}
-                    {(() => {
-                        const selectedPackage = packages.find(p => p.id === packageBookingData.package_id);
-
-                        if (!selectedPackage) {
-                            return null;
-                        }
-
-                        // Determine if it's whole_property:
-                        // 1. If booking_type is explicitly 'whole_property'
-                        // 2. If booking_type is not set AND room_types is not set (legacy whole_property)
-                        // 3. If booking_type is null/undefined and room_types is null/undefined/empty
-                        const hasRoomTypes = selectedPackage.room_types && selectedPackage.room_types.trim().length > 0;
-                        const isWholeProperty = selectedPackage.booking_type === 'whole_property' ||
-                            selectedPackage.booking_type === 'whole property' ||
-                            (!selectedPackage.booking_type && !hasRoomTypes);
-
-                        // Show room selection for both room_type and whole_property packages
-                        return (
-                            <div className="space-y-2">
-                                <label className={`block text-sm font-medium ${theme.textSecondary}`}>
-                                    {isWholeProperty ? 'Available Rooms (Full Property Booking)' : 'Available Rooms for Selected Dates'}
-                                </label>
-                                {!packageBookingData.check_in || !packageBookingData.check_out ? (
-                                    <div className={`p-6 text-center rounded-xl ${theme.bgSecondary} border-2 border-dashed ${theme.border}`}>
-                                        <BedDouble className={`w-10 h-10 ${theme.textSecondary} mx-auto mb-3`} />
-                                        <p className={`text-sm ${theme.textSecondary}`}>Please select check-in and check-out dates above to see available rooms</p>
+                {/* General Booking Modal - Date Selection First */}
+                {
+                    isGeneralBookingOpen && (
+                        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className={`w-full max-w-md ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col`}>
+                                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
+                                    <h3 className="text-lg font-bold flex items-center"><BedDouble className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Select Your Dates</h3>
+                                    <button onClick={() => { setIsGeneralBookingOpen(false); setShowAmenities(false); }} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
+                                </div>
+                                <div className="p-6 space-y-4">
+                                    <p className={`${theme.textSecondary} text-center mb-4`}>Select your check-in and check-out dates to view available rooms</p>
+                                    <div className="flex space-x-4">
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-in Date</label>
+                                            <input
+                                                type="date"
+                                                name="check_in"
+                                                value={bookingData.check_in}
+                                                onChange={handleRoomBookingChange}
+                                                min={new Date().toISOString().split('T')[0]}
+                                                required
+                                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-[#0f5132] transition-colors`}
+                                            />
+                                        </div>
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-out Date</label>
+                                            <input
+                                                type="date"
+                                                name="check_out"
+                                                value={bookingData.check_out}
+                                                onChange={handleRoomBookingChange}
+                                                min={bookingData.check_in || new Date().toISOString().split('T')[0]}
+                                                required
+                                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-[#0f5132] transition-colors`}
+                                            />
+                                        </div>
                                     </div>
-                                ) : (
-                                    <>
-                                        {isWholeProperty && (
-                                            <div className={`p-3 rounded-xl ${theme.bgSecondary} border-2 border-amber-300 mb-3`}>
-                                                <p className={`text-sm font-semibold ${theme.textPrimary}`}>Whole Property Package</p>
-                                                <p className={`text-xs ${theme.textSecondary} mt-1`}>
-                                                    All available rooms will be booked for the selected dates. You can see them below.
-                                                </p>
-                                            </div>
-                                        )}
-                                        <p className={`text-xs ${theme.textSecondary} mb-2`}>Showing rooms available from {packageBookingData.check_in} to {packageBookingData.check_out}</p>
-                                        <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-48 overflow-y-auto p-3 rounded-xl ${theme.bgSecondary}`}>
-                                            {(() => {
-                                                // Filter rooms based on package type
-                                                let roomsToShow = rooms;
-
-                                                if (isWholeProperty) {
-                                                    // For whole_property: Show ALL available rooms
-                                                    roomsToShow = rooms;
-                                                } else if (selectedPackage && selectedPackage.room_types) {
-                                                    // For room_type: Only show rooms matching the package's room_types
-                                                    const allowedRoomTypes = selectedPackage.room_types.split(',').map(t => t.trim().toLowerCase());
-                                                    roomsToShow = rooms.filter(room => {
-                                                        const roomType = room.type ? room.type.trim().toLowerCase() : '';
-                                                        return allowedRoomTypes.includes(roomType);
-                                                    });
-                                                } else {
-                                                    // Invalid package type - no room_types specified and not whole_property
-                                                    return (
-                                                        <div className="col-span-full text-center py-8 text-gray-500">
-                                                            <BedDouble className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                                                            <p className="text-sm font-semibold mb-1">Invalid package type</p>
-                                                            <p className="text-xs">Please select a valid package.</p>
+                                    {bookingData.check_in && bookingData.check_out && (
+                                        <div className="pt-4 space-y-3 border-top border-gray-200 dark:border-neutral-700">
+                                            <p className={`text-sm ${theme.textSecondary} text-center`}>Continue with booking:</p>
+                                            <button
+                                                onClick={() => { setIsGeneralBookingOpen(false); setShowAmenities(false); setIsRoomBookingFormOpen(true); }}
+                                                className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors flex items-center justify-center space-x-2`}
+                                            >
+                                                <BedDouble className="w-5 h-5" />
+                                                <span>Book a Room</span>
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setIsGeneralBookingOpen(false);
+                                                    setShowAmenities(false);
+                                                    setPackageBookingData(prev => ({
+                                                        ...prev,
+                                                        check_in: bookingData.check_in || prev.check_in || '',
+                                                        check_out: bookingData.check_out || prev.check_out || ''
+                                                    }));
+                                                    setIsPackageSelectionOpen(true);
+                                                }}
+                                                className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors flex items-center justify-center space-x-2`}
+                                            >
+                                                <Package className="w-5 h-5" />
+                                                <span>Book a Package</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setShowAmenities(prev => !prev)}
+                                                className="w-full py-3 rounded-full bg-white text-[#0f5132] font-bold shadow-lg hover:shadow-xl transition-colors flex items-center justify-center space-x-2 border border-[#d8c9ac]"
+                                            >
+                                                <Droplet className="w-5 h-5 text-[#0f5132]" />
+                                                <span>{showAmenities ? "Hide Amenities" : "View Amenities"}</span>
+                                            </button>
+                                        </div>
+                                    )}
+                                    {showAmenities && (
+                                        <div className="mt-4 space-y-3 border-t border-gray-200 dark:border-neutral-700 pt-4">
+                                            <h4 className="text-sm font-semibold text-center text-[#0f5132] uppercase tracking-widest">
+                                                Resort Amenities
+                                            </h4>
+                                            {services && services.length > 0 ? (
+                                                <div className="max-h-48 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    {services.map((service) => (
+                                                        <div
+                                                            key={service.id}
+                                                            className="flex items-start space-x-3 rounded-2xl bg-white/80 border border-[#d8c9ac] px-4 py-3 shadow-sm"
+                                                        >
+                                                            <div className="flex-shrink-0 mt-1 text-[#0f5132]">
+                                                                <ConciergeBell className="w-5 h-5" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-sm font-semibold text-[#0f5132]">{service.name}</p>
+                                                                {service.description && (
+                                                                    <p className="text-xs text-[#4f6f62] mt-1 line-clamp-2">
+                                                                        {service.description}
+                                                                    </p>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    );
-                                                }
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-center text-sm text-[#4f6f62] bg-white/70 rounded-2xl px-4 py-6 border border-dashed border-[#d8c9ac]">
+                                                    Amenities information will be available soon. Please contact concierge for more details.
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )
+                }
 
-                                                // Filter to only show available rooms (check availability)
-                                                roomsToShow = roomsToShow.filter(room => {
-                                                    // Check if room is available based on packageRoomAvailability
-                                                    const isAvailable = packageRoomAvailability[room.id] === true;
-                                                    return isAvailable;
-                                                });
-
-                                                return roomsToShow.length > 0 ? (
-                                                    roomsToShow.map(room => {
-                                                        // For whole_property, all available rooms are auto-selected, but still show them
-                                                        const isSelected = packageBookingData.room_ids.includes(room.id);
-                                                        return (
-                                                            <div
-                                                                key={room.id}
-                                                                onClick={() => !isWholeProperty ? handlePackageRoomSelection(room.id) : null}
-                                                                className={`rounded-lg border-2 transition-all duration-200 overflow-hidden ${!isWholeProperty ? 'cursor-pointer' : 'cursor-default'} ${isSelected ? `${theme.buttonBg} ${theme.buttonText} border-transparent` : `${theme.bgCard} ${theme.textPrimary} ${theme.border} ${!isWholeProperty ? 'hover:border-[#c99c4e]' : ''}`}`}
+                {/* Room Booking Modal */}
+                {
+                    isRoomBookingFormOpen && (
+                        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                            <div className={`w-full max-w-lg ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col max-h-[90vh] my-8`}>
+                                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
+                                    <h3 className="text-lg font-bold flex items-center"><BedDouble className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Book a Room</h3>
+                                    <button onClick={() => setIsRoomBookingFormOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
+                                </div>
+                                {/* Error message inside modal */}
+                                {bannerMessage.text && bannerMessage.type === 'error' && (
+                                    <div className={`mx-6 mt-4 p-3 rounded-lg bg-red-100 border border-red-300 text-red-700 text-sm flex items-center`}>
+                                        <span className="mr-2">❌</span>
+                                        {bannerMessage.text}
+                                    </div>
+                                )}
+                                {/* Success message inside modal */}
+                                {bannerMessage.text && bannerMessage.type === 'success' && (
+                                    <div className={`mx-6 mt-4 p-3 rounded-lg bg-green-100 border border-green-300 text-green-700 text-sm flex items-center`}>
+                                        <span className="mr-2">✅</span>
+                                        {bannerMessage.text}
+                                    </div>
+                                )}
+                                <form onSubmit={handleRoomBookingSubmit} className="p-4 space-y-4 overflow-y-auto">
+                                    {/* Always show editable date inputs */}
+                                    <div className="flex space-x-4">
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-in Date</label>
+                                            <input
+                                                type="date"
+                                                name="check_in"
+                                                value={bookingData.check_in || ''}
+                                                onChange={handleRoomBookingChange}
+                                                min={new Date().toISOString().split('T')[0]}
+                                                required
+                                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-[#0f5132] transition-colors`}
+                                            />
+                                        </div>
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-out Date</label>
+                                            <input
+                                                type="date"
+                                                name="check_out"
+                                                value={bookingData.check_out || ''}
+                                                onChange={handleRoomBookingChange}
+                                                min={bookingData.check_in || new Date().toISOString().split('T')[0]}
+                                                required
+                                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-[#0f5132] transition-colors`}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Available Rooms for Selected Dates</label>
+                                        {!bookingData.check_in || !bookingData.check_out ? (
+                                            <div className={`p-6 text-center rounded-xl ${theme.bgSecondary} border-2 border-dashed ${theme.border}`}>
+                                                <BedDouble className={`w-10 h-10 ${theme.textSecondary} mx-auto mb-3`} />
+                                                <p className={`text-sm ${theme.textSecondary}`}>Please select check-in and check-out dates above to see available rooms</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <p className={`text-xs ${theme.textSecondary} mb-2`}>Showing rooms available from {bookingData.check_in} to {bookingData.check_out}</p>
+                                                <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-48 overflow-y-auto p-3 rounded-xl ${theme.bgSecondary}`}>
+                                                    {rooms.length > 0 ? (
+                                                        rooms.map(room => (
+                                                            <div key={room.id} onClick={() => handleRoomSelection(room.id)}
+                                                                className={`rounded-lg border-2 cursor-pointer transition-all duration-200 overflow-hidden ${bookingData.room_ids.includes(room.id) ? `${theme.buttonBg} ${theme.buttonText} border-transparent` : `${theme.bgCard} ${theme.textPrimary} ${theme.border} hover:border-[#c99c4e]`}`}
                                                             >
                                                                 <img
                                                                     src={getImageUrl(room.image_url)}
@@ -3975,284 +4153,482 @@ export default function App() {
                                                                     <p className="text-xs opacity-80">{room.type}</p>
                                                                     <p className="text-xs opacity-60 mt-1">Max: {room.adults}A, {room.children}C</p>
                                                                     <p className="text-xs font-bold mt-1">{formatCurrency(room.price)}</p>
-                                                                    {isWholeProperty && isSelected && (
-                                                                        <p className="text-xs font-semibold mt-1 text-green-600">✓ Selected</p>
-                                                                    )}
                                                                 </div>
                                                             </div>
-                                                        );
-                                                    })
+                                                        ))
+                                                    ) : (
+                                                        <div className="col-span-full text-center py-8 text-gray-500">
+                                                            <BedDouble className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                                                            <p className="text-sm font-semibold mb-1">No rooms available</p>
+                                                            <p className="text-xs">No rooms are available for the selected dates. Please try different dates.</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Full Name</label>
+                                        <input type="text" name="guest_name" value={bookingData.guest_name} onChange={handleRoomBookingChange} placeholder="Enter your full name" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Email Address</label>
+                                        <input type="email" name="guest_email" value={bookingData.guest_email} onChange={handleRoomBookingChange} placeholder="user@example.com" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Phone Number</label>
+                                        <input type="tel" name="guest_mobile" value={bookingData.guest_mobile} onChange={handleRoomBookingChange} placeholder="Enter your mobile number" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="flex space-x-4">
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Adults</label>
+                                            <input type="number" name="adults" value={bookingData.adults} onChange={handleRoomBookingChange} min="1" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                        </div>
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Children</label>
+                                            <input type="number" name="children" value={bookingData.children} onChange={handleRoomBookingChange} min="0" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                        </div>
+                                    </div>
+                                    <button type="submit" className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={isBookingLoading}>
+                                        {isBookingLoading ? 'Booking...' : 'Confirm Booking'}
+                                    </button>
+                                    {bookingMessage.text && (
+                                        <div className={`mt-4 p-3 rounded-xl text-center ${bookingMessage.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                                            {bookingMessage.text}
+                                        </div>
+                                    )}
+                                </form>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* Package Booking Modal */}
+                {
+                    isPackageBookingFormOpen && (
+                        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                            <div className={`w-full max-w-lg ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col max-h-[90vh] my-8`}>
+                                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
+                                    <h3 className="text-lg font-bold flex items-center"><Package className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Book a Package</h3>
+                                    <button onClick={() => setIsPackageBookingFormOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
+                                </div>
+                                {/* Error message inside modal */}
+                                {bannerMessage.text && bannerMessage.type === 'error' && (
+                                    <div className={`mx-6 mt-4 p-3 rounded-lg bg-red-100 border border-red-300 text-red-700 text-sm flex items-center`}>
+                                        <span className="mr-2">❌</span>
+                                        {bannerMessage.text}
+                                    </div>
+                                )}
+                                {/* Success message inside modal */}
+                                {bannerMessage.text && bannerMessage.type === 'success' && (
+                                    <div className={`mx-6 mt-4 p-3 rounded-lg bg-green-100 border border-green-300 text-green-700 text-sm flex items-center`}>
+                                        <span className="mr-2">✅</span>
+                                        {bannerMessage.text}
+                                    </div>
+                                )}
+                                <form onSubmit={handlePackageBookingSubmit} className="p-4 space-y-4 overflow-y-auto">
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Package ID</label>
+                                        <input type="number" name="package_id" value={packageBookingData.package_id || ''} readOnly className={`w-full p-3 rounded-xl ${theme.placeholderBg} ${theme.placeholderText} focus:outline-none`} />
+                                    </div>
+                                    {/* Always show editable date inputs */}
+                                    <div className="flex space-x-4">
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-in Date</label>
+                                            <input
+                                                type="date"
+                                                name="check_in"
+                                                value={packageBookingData.check_in || ''}
+                                                onChange={handlePackageBookingChange}
+                                                min={new Date().toISOString().split('T')[0]}
+                                                required
+                                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`}
+                                            />
+                                        </div>
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Check-out Date</label>
+                                            <input
+                                                type="date"
+                                                name="check_out"
+                                                value={packageBookingData.check_out || ''}
+                                                onChange={handlePackageBookingChange}
+                                                min={packageBookingData.check_in || new Date().toISOString().split('T')[0]}
+                                                required
+                                                className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`}
+                                            />
+                                        </div>
+                                    </div>
+                                    {/* Room Selection - Only show for room_type packages */}
+                                    {(() => {
+                                        const selectedPackage = packages.find(p => p.id === packageBookingData.package_id);
+
+                                        if (!selectedPackage) {
+                                            return null;
+                                        }
+
+                                        // Determine if it's whole_property:
+                                        // 1. If booking_type is explicitly 'whole_property'
+                                        // 2. If booking_type is not set AND room_types is not set (legacy whole_property)
+                                        // 3. If booking_type is null/undefined and room_types is null/undefined/empty
+                                        const hasRoomTypes = selectedPackage.room_types && selectedPackage.room_types.trim().length > 0;
+                                        const isWholeProperty = selectedPackage.booking_type === 'whole_property' ||
+                                            selectedPackage.booking_type === 'whole property' ||
+                                            (!selectedPackage.booking_type && !hasRoomTypes);
+
+                                        // Show room selection for both room_type and whole_property packages
+                                        return (
+                                            <div className="space-y-2">
+                                                <label className={`block text-sm font-medium ${theme.textSecondary}`}>
+                                                    {isWholeProperty ? 'Available Rooms (Full Property Booking)' : 'Available Rooms for Selected Dates'}
+                                                </label>
+                                                {!packageBookingData.check_in || !packageBookingData.check_out ? (
+                                                    <div className={`p-6 text-center rounded-xl ${theme.bgSecondary} border-2 border-dashed ${theme.border}`}>
+                                                        <BedDouble className={`w-10 h-10 ${theme.textSecondary} mx-auto mb-3`} />
+                                                        <p className={`text-sm ${theme.textSecondary}`}>Please select check-in and check-out dates above to see available rooms</p>
+                                                    </div>
                                                 ) : (
-                                                    <div className="col-span-full text-center py-8 text-gray-500">
-                                                        <BedDouble className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                                                        <p className="text-sm font-semibold mb-1">No rooms available</p>
-                                                        <p className="text-xs">No rooms are available for the selected dates. Please try different dates.</p>
+                                                    <>
+                                                        {isWholeProperty && (
+                                                            <div className={`p-3 rounded-xl ${theme.bgSecondary} border-2 border-amber-300 mb-3`}>
+                                                                <p className={`text-sm font-semibold ${theme.textPrimary}`}>Whole Property Package</p>
+                                                                <p className={`text-xs ${theme.textSecondary} mt-1`}>
+                                                                    All available rooms will be booked for the selected dates. You can see them below.
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                        <p className={`text-xs ${theme.textSecondary} mb-2`}>Showing rooms available from {packageBookingData.check_in} to {packageBookingData.check_out}</p>
+                                                        <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-48 overflow-y-auto p-3 rounded-xl ${theme.bgSecondary}`}>
+                                                            {(() => {
+                                                                // Filter rooms based on package type
+                                                                let roomsToShow = rooms;
+
+                                                                if (isWholeProperty) {
+                                                                    // For whole_property: Show ALL available rooms
+                                                                    roomsToShow = rooms;
+                                                                } else if (selectedPackage && selectedPackage.room_types) {
+                                                                    // For room_type: Only show rooms matching the package's room_types
+                                                                    const allowedRoomTypes = selectedPackage.room_types.split(',').map(t => t.trim().toLowerCase());
+                                                                    roomsToShow = rooms.filter(room => {
+                                                                        const roomType = room.type ? room.type.trim().toLowerCase() : '';
+                                                                        return allowedRoomTypes.includes(roomType);
+                                                                    });
+                                                                } else {
+                                                                    // Invalid package type - no room_types specified and not whole_property
+                                                                    return (
+                                                                        <div className="col-span-full text-center py-8 text-gray-500">
+                                                                            <BedDouble className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                                                                            <p className="text-sm font-semibold mb-1">Invalid package type</p>
+                                                                            <p className="text-xs">Please select a valid package.</p>
+                                                                        </div>
+                                                                    );
+                                                                }
+
+                                                                // Filter to only show available rooms (check availability)
+                                                                roomsToShow = roomsToShow.filter(room => {
+                                                                    // Check if room is available based on packageRoomAvailability
+                                                                    const isAvailable = packageRoomAvailability[room.id] === true;
+                                                                    return isAvailable;
+                                                                });
+
+                                                                return roomsToShow.length > 0 ? (
+                                                                    roomsToShow.map(room => {
+                                                                        // For whole_property, all available rooms are auto-selected, but still show them
+                                                                        const isSelected = packageBookingData.room_ids.includes(room.id);
+                                                                        return (
+                                                                            <div
+                                                                                key={room.id}
+                                                                                onClick={() => !isWholeProperty ? handlePackageRoomSelection(room.id) : null}
+                                                                                className={`rounded-lg border-2 transition-all duration-200 overflow-hidden ${!isWholeProperty ? 'cursor-pointer' : 'cursor-default'} ${isSelected ? `${theme.buttonBg} ${theme.buttonText} border-transparent` : `${theme.bgCard} ${theme.textPrimary} ${theme.border} ${!isWholeProperty ? 'hover:border-[#c99c4e]' : ''}`}`}
+                                                                            >
+                                                                                <img
+                                                                                    src={getImageUrl(room.image_url)}
+                                                                                    alt={room.type}
+                                                                                    className="w-full h-20 object-cover"
+                                                                                    onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                                                />
+                                                                                <div className="p-2 text-center">
+                                                                                    <p className="font-semibold text-xs">Room {room.number}</p>
+                                                                                    <p className="text-xs opacity-80">{room.type}</p>
+                                                                                    <p className="text-xs opacity-60 mt-1">Max: {room.adults}A, {room.children}C</p>
+                                                                                    <p className="text-xs font-bold mt-1">{formatCurrency(room.price)}</p>
+                                                                                    {isWholeProperty && isSelected && (
+                                                                                        <p className="text-xs font-semibold mt-1 text-green-600">✓ Selected</p>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })
+                                                                ) : (
+                                                                    <div className="col-span-full text-center py-8 text-gray-500">
+                                                                        <BedDouble className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                                                                        <p className="text-sm font-semibold mb-1">No rooms available</p>
+                                                                        <p className="text-xs">No rooms are available for the selected dates. Please try different dates.</p>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Full Name</label>
+                                        <input type="text" name="guest_name" value={packageBookingData.guest_name} onChange={handlePackageBookingChange} placeholder="Enter your full name" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Email Address</label>
+                                        <input type="email" name="guest_email" value={packageBookingData.guest_email || ''} onChange={handlePackageBookingChange} placeholder="user@example.com (optional)" className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Phone Number</label>
+                                        <input type="tel" name="guest_mobile" value={packageBookingData.guest_mobile} onChange={handlePackageBookingChange} placeholder="Enter your mobile number" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="flex space-x-4">
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Adults</label>
+                                            <input type="number" name="adults" value={packageBookingData.adults} onChange={handlePackageBookingChange} min="1" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                        </div>
+                                        <div className="space-y-2 w-1/2">
+                                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Children</label>
+                                            <input type="number" name="children" value={packageBookingData.children} onChange={handlePackageBookingChange} min="0" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Food Preferences / Food Orders</label>
+                                        <textarea name="food_preferences" value={packageBookingData.food_preferences} onChange={handlePackageBookingChange} placeholder="Order your food or mention dietary needs..." className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} rows="2" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Special Requests (Stay)</label>
+                                        <textarea name="special_requests" value={packageBookingData.special_requests} onChange={handlePackageBookingChange} placeholder="Mention any special needs for your stay..." className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} rows="2" />
+                                    </div>
+                                    <button type="submit" className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={isBookingLoading}>
+                                        {isBookingLoading ? 'Booking...' : 'Confirm Booking'}
+                                    </button>
+                                    {bookingMessage.text && (
+                                        <div className={`mt-4 p-3 rounded-xl text-center ${bookingMessage.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                                            {bookingMessage.text}
+                                        </div>
+                                    )}
+                                </form>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* Package Selection Modal */}
+                {
+                    isPackageSelectionOpen && (
+                        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                            <div className={`w-full max-w-4xl ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col max-h-[90vh] my-8`}>
+                                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
+                                    <h3 className="text-lg font-bold flex items-center"><Package className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Select a Package</h3>
+                                    <button onClick={() => setIsPackageSelectionOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
+                                </div>
+                                <div className="p-6 overflow-y-auto">
+                                    {packages.length > 0 ? (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            {packages.map((pkg) => {
+                                                const imgIndex = packageImageIndex[pkg.id] || 0;
+                                                const currentImage = pkg.images && pkg.images[imgIndex];
+                                                return (
+                                                    <div
+                                                        key={pkg.id}
+                                                        onClick={() => {
+                                                            handleOpenPackageBookingForm(pkg.id);
+                                                            setIsPackageSelectionOpen(false);
+                                                        }}
+                                                        className={`${theme.bgCard} rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-500 border ${theme.border} cursor-pointer transform hover:-translate-y-1`}
+                                                    >
+                                                        {/* Image Container */}
+                                                        <div className="relative h-48 overflow-hidden">
+                                                            <img
+                                                                src={currentImage ? getImageUrl(currentImage.image_url) : ITEM_PLACEHOLDER}
+                                                                alt={pkg.title}
+                                                                className="w-full h-full object-cover transition-transform duration-700 hover:scale-110"
+                                                                onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
+                                                            />
+                                                            {/* Image Slider Dots */}
+                                                            {pkg.images && pkg.images.length > 1 && (
+                                                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/60 backdrop-blur-sm px-3 py-2 rounded-full z-10">
+                                                                    {pkg.images.map((_, imgIdx) => (
+                                                                        <button
+                                                                            key={imgIdx}
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setPackageImageIndex(prev => ({ ...prev, [pkg.id]: imgIdx }));
+                                                                            }}
+                                                                            className={`w-2 h-2 rounded-full transition-all ${imgIdx === imgIndex ? 'bg-white' : 'bg-white/40'}`}
+                                                                        />
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                                                        </div>
+
+                                                        {/* Content */}
+                                                        <div className="p-5">
+                                                            <h3 className={`text-xl font-bold ${theme.textCardPrimary || theme.textPrimary} mb-2 line-clamp-2`}>
+                                                                {pkg.title}
+                                                            </h3>
+                                                            <p className={`text-sm ${theme.textCardSecondary || theme.textSecondary} mb-3 line-clamp-2`}>
+                                                                {pkg.description}
+                                                            </p>
+                                                            {pkg.complimentary && (
+                                                                <div className="mb-3 px-3 py-2 bg-amber-50/50 rounded-lg border border-amber-100">
+                                                                    <p className={`text-xs ${theme.textAccent} font-semibold uppercase tracking-wide mb-1`}>Includes:</p>
+                                                                    <p className={`text-xs ${theme.textCardSecondary || theme.textSecondary} line-clamp-2`}>{pkg.complimentary}</p>
+                                                                </div>
+                                                            )}
+                                                            <div className={`flex items-center justify-between pt-3 border-t ${theme.cardBorder || theme.border}`}>
+                                                                <span className={`text-2xl font-extrabold ${theme.textCardAccent || theme.textAccent}`}>
+                                                                    {formatCurrency(pkg.price || 0)}
+                                                                </span>
+                                                                <button
+                                                                    className={`px-6 py-2 text-sm font-bold ${theme.buttonBg} ${theme.buttonText} rounded-full shadow-lg ${theme.buttonHover} transition-all duration-300 transform hover:scale-105`}
+                                                                >
+                                                                    Select
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 );
-                                            })()}
+                                            })}
                                         </div>
-                                    </>
-                                )}
-                            </div>
-                        );
-                    })()}
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Full Name</label>
-                        <input type="text" name="guest_name" value={packageBookingData.guest_name} onChange={handlePackageBookingChange} placeholder="Enter your full name" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Email Address</label>
-                        <input type="email" name="guest_email" value={packageBookingData.guest_email || ''} onChange={handlePackageBookingChange} placeholder="user@example.com (optional)" className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Phone Number</label>
-                        <input type="tel" name="guest_mobile" value={packageBookingData.guest_mobile} onChange={handlePackageBookingChange} placeholder="Enter your mobile number" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="flex space-x-4">
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Adults</label>
-                            <input type="number" name="adults" value={packageBookingData.adults} onChange={handlePackageBookingChange} min="1" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                        </div>
-                        <div className="space-y-2 w-1/2">
-                            <label className={`block text-sm font-medium ${theme.textSecondary}`}>Children</label>
-                            <input type="number" name="children" value={packageBookingData.children} onChange={handlePackageBookingChange} min="0" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                        </div>
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Food Preferences / Food Orders</label>
-                        <textarea name="food_preferences" value={packageBookingData.food_preferences} onChange={handlePackageBookingChange} placeholder="Order your food or mention dietary needs..." className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} rows="2" />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Special Requests (Stay)</label>
-                        <textarea name="special_requests" value={packageBookingData.special_requests} onChange={handlePackageBookingChange} placeholder="Mention any special needs for your stay..." className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} rows="2" />
-                    </div>
-                    <button type="submit" className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={isBookingLoading}>
-                        {isBookingLoading ? 'Booking...' : 'Confirm Booking'}
-                    </button>
-                    {bookingMessage.text && (
-                        <div className={`mt-4 p-3 rounded-xl text-center ${bookingMessage.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
-                            {bookingMessage.text}
-                        </div>
-                    )}
-                </form>
-            </div>
-        </div>
-    )
-}
-
-{/* Package Selection Modal */ }
-{
-    isPackageSelectionOpen && (
-        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-            <div className={`w-full max-w-4xl ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col max-h-[90vh] my-8`}>
-                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
-                    <h3 className="text-lg font-bold flex items-center"><Package className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Select a Package</h3>
-                    <button onClick={() => setIsPackageSelectionOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
-                </div>
-                <div className="p-6 overflow-y-auto">
-                    {packages.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {packages.map((pkg) => {
-                                const imgIndex = packageImageIndex[pkg.id] || 0;
-                                const currentImage = pkg.images && pkg.images[imgIndex];
-                                return (
-                                    <div
-                                        key={pkg.id}
-                                        onClick={() => {
-                                            handleOpenPackageBookingForm(pkg.id);
-                                            setIsPackageSelectionOpen(false);
-                                        }}
-                                        className={`${theme.bgCard} rounded-2xl overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-500 border ${theme.border} cursor-pointer transform hover:-translate-y-1`}
-                                    >
-                                        {/* Image Container */}
-                                        <div className="relative h-48 overflow-hidden">
-                                            <img
-                                                src={currentImage ? getImageUrl(currentImage.image_url) : ITEM_PLACEHOLDER}
-                                                alt={pkg.title}
-                                                className="w-full h-full object-cover transition-transform duration-700 hover:scale-110"
-                                                onError={(e) => { e.target.src = ITEM_PLACEHOLDER; }}
-                                            />
-                                            {/* Image Slider Dots */}
-                                            {pkg.images && pkg.images.length > 1 && (
-                                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/60 backdrop-blur-sm px-3 py-2 rounded-full z-10">
-                                                    {pkg.images.map((_, imgIdx) => (
-                                                        <button
-                                                            key={imgIdx}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setPackageImageIndex(prev => ({ ...prev, [pkg.id]: imgIdx }));
-                                                            }}
-                                                            className={`w-2 h-2 rounded-full transition-all ${imgIdx === imgIndex ? 'bg-white' : 'bg-white/40'}`}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            )}
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
+                                    ) : (
+                                        <div className="text-center py-12">
+                                            <Package className={`w-16 h-16 ${theme.textSecondary} mx-auto mb-4`} />
+                                            <p className={`${theme.textSecondary}`}>No packages available at the moment.</p>
                                         </div>
-
-                                        {/* Content */}
-                                        <div className="p-5">
-                                            <h3 className={`text-xl font-bold ${theme.textCardPrimary || theme.textPrimary} mb-2 line-clamp-2`}>
-                                                {pkg.title}
-                                            </h3>
-                                            <p className={`text-sm ${theme.textCardSecondary || theme.textSecondary} mb-3 line-clamp-2`}>
-                                                {pkg.description}
-                                            </p>
-                                            {pkg.complimentary && (
-                                                <div className="mb-3 px-3 py-2 bg-amber-50/50 rounded-lg border border-amber-100">
-                                                    <p className={`text-xs ${theme.textAccent} font-semibold uppercase tracking-wide mb-1`}>Includes:</p>
-                                                    <p className={`text-xs ${theme.textCardSecondary || theme.textSecondary} line-clamp-2`}>{pkg.complimentary}</p>
-                                                </div>
-                                            )}
-                                            <div className={`flex items-center justify-between pt-3 border-t ${theme.cardBorder || theme.border}`}>
-                                                <span className={`text-2xl font-extrabold ${theme.textCardAccent || theme.textAccent}`}>
-                                                    {formatCurrency(pkg.price || 0)}
-                                                </span>
-                                                <button
-                                                    className={`px-6 py-2 text-sm font-bold ${theme.buttonBg} ${theme.buttonText} rounded-full shadow-lg ${theme.buttonHover} transition-all duration-300 transform hover:scale-105`}
-                                                >
-                                                    Select
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    ) : (
-                        <div className="text-center py-12">
-                            <Package className={`w-16 h-16 ${theme.textSecondary} mx-auto mb-4`} />
-                            <p className={`${theme.textSecondary}`}>No packages available at the moment.</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    )
-}
-
-{/* Service Booking Modal */ }
-{
-    isServiceBookingFormOpen && (
-        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className={`w-full max-w-lg ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col`}>
-                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
-                    <h3 className="text-lg font-bold flex items-center"><ConciergeBell className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Book a Service</h3>
-                    <button onClick={() => setIsServiceBookingFormOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
-                </div>
-                <form onSubmit={handleServiceBookingSubmit} className="p-4 space-y-4">
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Service ID</label>
-                        <input type="number" name="service_id" value={serviceBookingData.service_id || ''} readOnly className={`w-full p-3 rounded-xl ${theme.placeholderBg} ${theme.placeholderText} focus:outline-none`} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Full Name</label>
-                        <input type="text" name="guest_name" value={serviceBookingData.guest_name} onChange={handleServiceBookingChange} placeholder="Enter your full name" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Email Address</label>
-                        <input type="email" name="guest_email" value={serviceBookingData.guest_email} onChange={handleServiceBookingChange} placeholder="user@example.com" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Phone Number</label>
-                        <input type="tel" name="guest_mobile" value={serviceBookingData.guest_mobile} onChange={handleServiceBookingChange} placeholder="Enter your mobile number" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Room ID (Optional)</label>
-                        <input type="number" name="room_id" value={serviceBookingData.room_id || ''} onChange={handleServiceBookingChange} placeholder="Enter your room ID if assigned" className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <button type="submit" className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={isBookingLoading}>
-                        {isBookingLoading ? 'Booking...' : 'Confirm Booking'}
-                    </button>
-                    {bookingMessage.text && (
-                        <div className={`mt-4 p-3 rounded-xl text-center ${bookingMessage.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
-                            {bookingMessage.text}
-                        </div>
-                    )}
-                </form>
-            </div>
-        </div>
-    )
-}
-
-{/* Food Order Modal */ }
-{
-    isFoodOrderFormOpen && (
-        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className={`w-full max-w-lg ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col`}>
-                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
-                    <h3 className="text-lg font-bold flex items-center"><Coffee className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Place a Food Order</h3>
-                    <button onClick={() => setIsFoodOrderFormOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
-                </div>
-                <form onSubmit={handleFoodOrderSubmit} className="p-4 space-y-4">
-                    <div className="space-y-2">
-                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Room ID</label>
-                        <input type="number" name="room_id" value={foodOrderData.room_id || ''} onChange={(e) => setFoodOrderData(prev => ({ ...prev, room_id: parseInt(e.target.value) || '' }))} placeholder="Enter your room ID" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
-                    </div>
-                    <h4 className={`text-md font-semibold ${theme.textPrimary}`}>Select Items:</h4>
-                    <div className="space-y-4 max-h-60 overflow-y-auto">
-                        {foodItems.map(item => (
-                            <div key={item.id} className="flex items-center justify-between">
-                                <div className="flex items-center space-x-4">
-                                    <img src={getImageUrl(item.images?.[0]?.image_url)} alt={item.name} className="w-12 h-12 object-cover rounded-full" />
-                                    <div>
-                                        <p className={`font-semibold ${theme.textPrimary}`}>{item.name}</p>
-                                    </div>
+                                    )}
                                 </div>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    value={foodOrderData.items[item.id] || 0}
-                                    onChange={(e) => handleFoodOrderChange(e, item.id)}
-                                    className={`w-20 p-2 text-center rounded-lg ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500`}
-                                />
                             </div>
-                        ))}
-                    </div>
-                    <button type="submit" className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={isBookingLoading}>
-                        {isBookingLoading ? 'Placing Order...' : 'Place Order'}
-                    </button>
-                    {bookingMessage.text && (
-                        <div className={`mt-4 p-3 rounded-xl text-center ${bookingMessage.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
-                            {bookingMessage.text}
                         </div>
-                    )}
-                </form>
-            </div>
-        </div>
-    )
-}
+                    )
+                }
 
-<footer data-contact-section className="bg-transparent text-white py-8 px-4 md:px-12 mt-12">
-    <div className="container mx-auto flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
-        {resortInfo && (
-            <>
-                <div className="text-center md:text-left">
-                    <h3 className="text-xl font-bold tracking-tight text-gray-800">{resortInfo.name}</h3>
-                    <p className="text-sm text-gray-700 mt-1">{resortInfo.address}</p>
-                    <p className="text-xs text-gray-600 mt-2">&copy; 2024 Elysian Retreat. All Rights Reserved.</p>
-                </div>
-                <div className="flex space-x-4 text-gray-700">
-                    <a href={formatUrl(resortInfo.facebook)} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors"><Facebook /></a>
-                    <a href={formatUrl(resortInfo.instagram)} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors"><Instagram /></a>
-                    <a href={formatUrl(resortInfo.twitter)} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors"><Twitter /></a>
-                    <a href={formatUrl(resortInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors"><Linkedin /></a>
-                </div>
-            </>
-        )}
-    </div>
-    <div className="mt-6 pt-6 border-t border-gray-300/20 text-center">
-        <a
-            href="https://teqmates.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-gray-600 hover:text-gray-800 transition-colors"
-        >
-            Powered by <span className="font-semibold">TeqMates</span>
-        </a>
-    </div>
-</footer>
-            </div >
+                {/* Service Booking Modal */}
+                {
+                    isServiceBookingFormOpen && (
+                        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className={`w-full max-w-lg ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col`}>
+                                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
+                                    <h3 className="text-lg font-bold flex items-center"><ConciergeBell className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Book a Service</h3>
+                                    <button onClick={() => setIsServiceBookingFormOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
+                                </div>
+                                <form onSubmit={handleServiceBookingSubmit} className="p-4 space-y-4">
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Service ID</label>
+                                        <input type="number" name="service_id" value={serviceBookingData.service_id || ''} readOnly className={`w-full p-3 rounded-xl ${theme.placeholderBg} ${theme.placeholderText} focus:outline-none`} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Full Name</label>
+                                        <input type="text" name="guest_name" value={serviceBookingData.guest_name} onChange={handleServiceBookingChange} placeholder="Enter your full name" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Email Address</label>
+                                        <input type="email" name="guest_email" value={serviceBookingData.guest_email} onChange={handleServiceBookingChange} placeholder="user@example.com" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Phone Number</label>
+                                        <input type="tel" name="guest_mobile" value={serviceBookingData.guest_mobile} onChange={handleServiceBookingChange} placeholder="Enter your mobile number" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Room ID (Optional)</label>
+                                        <input type="number" name="room_id" value={serviceBookingData.room_id || ''} onChange={handleServiceBookingChange} placeholder="Enter your room ID if assigned" className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <button type="submit" className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={isBookingLoading}>
+                                        {isBookingLoading ? 'Booking...' : 'Confirm Booking'}
+                                    </button>
+                                    {bookingMessage.text && (
+                                        <div className={`mt-4 p-3 rounded-xl text-center ${bookingMessage.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                                            {bookingMessage.text}
+                                        </div>
+                                    )}
+                                </form>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* Food Order Modal */}
+                {
+                    isFoodOrderFormOpen && (
+                        <div className="fixed inset-0 z-[100] bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className={`w-full max-w-lg ${theme.bgCard} rounded-3xl shadow-2xl flex flex-col`}>
+                                <div className={`p-6 flex items-center justify-between border-b ${theme.border}`}>
+                                    <h3 className="text-lg font-bold flex items-center"><Coffee className={`w-5 h-5 mr-2 ${theme.textAccent}`} /> Place a Food Order</h3>
+                                    <button onClick={() => setIsFoodOrderFormOpen(false)} className={`p-1 rounded-full ${theme.textSecondary} hover:${theme.textPrimary} transition-colors`}><X className="w-6 h-6" /></button>
+                                </div>
+                                <form onSubmit={handleFoodOrderSubmit} className="p-4 space-y-4">
+                                    <div className="space-y-2">
+                                        <label className={`block text-sm font-medium ${theme.textSecondary}`}>Room ID</label>
+                                        <input type="number" name="room_id" value={foodOrderData.room_id || ''} onChange={(e) => setFoodOrderData(prev => ({ ...prev, room_id: parseInt(e.target.value) || '' }))} placeholder="Enter your room ID" required className={`w-full p-3 rounded-xl ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500 transition-colors`} />
+                                    </div>
+                                    <h4 className={`text-md font-semibold ${theme.textPrimary}`}>Select Items:</h4>
+                                    <div className="space-y-4 max-h-60 overflow-y-auto">
+                                        {foodItems.map(item => (
+                                            <div key={item.id} className="flex items-center justify-between">
+                                                <div className="flex items-center space-x-4">
+                                                    <img src={getImageUrl(item.images?.[0]?.image_url)} alt={item.name} className="w-12 h-12 object-cover rounded-full" />
+                                                    <div>
+                                                        <p className={`font-semibold ${theme.textPrimary}`}>{item.name}</p>
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={foodOrderData.items[item.id] || 0}
+                                                    onChange={(e) => handleFoodOrderChange(e, item.id)}
+                                                    className={`w-20 p-2 text-center rounded-lg ${theme.bgSecondary} ${theme.textPrimary} border ${theme.border} focus:outline-none focus:ring-2 focus:ring-amber-500`}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button type="submit" className={`w-full py-3 rounded-full ${theme.buttonBg} ${theme.buttonText} font-bold shadow-lg ${theme.buttonHover} transition-colors disabled:opacity-50`} disabled={isBookingLoading}>
+                                        {isBookingLoading ? 'Placing Order...' : 'Place Order'}
+                                    </button>
+                                    {bookingMessage.text && (
+                                        <div className={`mt-4 p-3 rounded-xl text-center ${bookingMessage.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
+                                            {bookingMessage.text}
+                                        </div>
+                                    )}
+                                </form>
+                            </div>
+                        </div>
+                    )
+                }
+
+                <footer data-contact-section className="bg-transparent text-white py-8 px-4 md:px-12 mt-12">
+                    <div className="container mx-auto flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
+                        {resortInfo && (
+                            <>
+                                <div className="text-center md:text-left">
+                                    <h3 className="text-xl font-bold tracking-tight text-gray-800">{resortInfo.name}</h3>
+                                    <p className="text-sm text-gray-700 mt-1">{resortInfo.address}</p>
+                                    <p className="text-xs text-gray-600 mt-2">&copy; 2024 Elysian Retreat. All Rights Reserved.</p>
+                                </div>
+                                <div className="flex space-x-4 text-gray-700">
+                                    <a href={formatUrl(resortInfo.facebook)} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors"><Facebook /></a>
+                                    <a href={formatUrl(resortInfo.instagram)} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors"><Instagram /></a>
+                                    <a href={formatUrl(resortInfo.twitter)} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors"><Twitter /></a>
+                                    <a href={formatUrl(resortInfo.linkedin)} target="_blank" rel="noopener noreferrer" className="hover:text-gray-900 transition-colors"><Linkedin /></a>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    <div className="mt-6 pt-6 border-t border-gray-300/20 text-center">
+                        <a
+                            href="https://teqmates.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                        >
+                            Powered by <span className="font-semibold">TeqMates</span>
+                        </a>
+                    </div>
+                </footer>
+            </div>
         </>
     );
 }
