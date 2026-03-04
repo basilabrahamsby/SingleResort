@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, Float
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -9,9 +9,17 @@ class FoodItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     description = Column(String)
-    price = Column(Integer)
-    available = Column(String)
+    price = Column(Float)
+    available = Column(Boolean, default=True)
     category_id = Column(Integer, ForeignKey("food_categories.id"))
+
+    # New fields for time-based details
+    available_from_time = Column(String, nullable=True)
+    available_to_time = Column(String, nullable=True)
+    always_available = Column(Boolean, default=True)
+    time_wise_prices = Column(String, nullable=True) # Store as JSON string 
+    room_service_price = Column(Float, nullable=True)
+    extra_inventory_items = Column(String, nullable=True) # Store as JSON string
 
     images = relationship("FoodItemImage", back_populates="food_item", cascade="all, delete-orphan")
     category = relationship("FoodCategory", lazy="joined")

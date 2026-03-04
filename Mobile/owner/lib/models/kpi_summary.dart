@@ -34,6 +34,7 @@ class KpiSummary {
   final double totalServiceRevenue;
   final int foodItemsAvailable;
   final int activeEmployees;
+  final int onlineEmployees;
   final int inventoryCategories;
   final int inventoryDepartments;
   final double totalPurchases;
@@ -62,6 +63,7 @@ class KpiSummary {
     this.totalServiceRevenue = 0.0,
     this.foodItemsAvailable = 0,
     this.activeEmployees = 0,
+    this.onlineEmployees = 0,
     this.inventoryCategories = 0,
     this.inventoryDepartments = 0,
     this.totalPurchases = 0.0,
@@ -100,6 +102,7 @@ class KpiSummary {
       totalServiceRevenue: (json['total_service_revenue'] ?? 0).toDouble(),
       foodItemsAvailable: json['food_items_available'] ?? 0,
       activeEmployees: json['active_employees'] ?? 0,
+      onlineEmployees: json['online_employees'] ?? 0,
       inventoryCategories: json['inventory_categories'] ?? 0,
       inventoryDepartments: json['inventory_departments'] ?? 0,
       totalPurchases: (json['total_purchases'] ?? 0).toDouble(),

@@ -68,10 +68,25 @@ class ServiceProvider with ChangeNotifier {
     }
   }
 
-  Future<void> updateRequestStatus(int requestId, String status) async {
+  Future<void> updateRequestStatus(int requestId, String status, {
+    String? billingStatus,
+    List<Map<String, dynamic>>? inventoryReturns,
+    int? returnLocationId,
+    int? pickupLocationId,
+    int? employeeId,
+    String? notes,
+  }) async {
     try {
+      final Map<String, dynamic> data = {'status': status};
+      if (billingStatus != null) data['billing_status'] = billingStatus;
+      if (inventoryReturns != null) data['inventory_returns'] = inventoryReturns;
+      if (returnLocationId != null) data['return_location_id'] = returnLocationId;
+      if (pickupLocationId != null) data['pickup_location_id'] = pickupLocationId;
+      if (employeeId != null) data['employee_id'] = employeeId;
+      if (notes != null) data['notes'] = notes;
+
       final response = await _apiService.client.put('/service-requests/$requestId', 
-        data: {'status': status}
+        data: data
       );
       if (response.statusCode == 200) {
         await fetchRequests(); // Refresh
@@ -79,6 +94,32 @@ class ServiceProvider with ChangeNotifier {
       }
     } catch (e) {
       print('Error updating request status: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateAssignedServiceStatus(int assignedId, String status, {
+    String? billingStatus,
+    List<Map<String, dynamic>>? inventoryReturns,
+    int? returnLocationId,
+    String? notes,
+  }) async {
+    try {
+      final Map<String, dynamic> data = {'status': status};
+      if (billingStatus != null) data['billing_status'] = billingStatus;
+      if (inventoryReturns != null) data['inventory_returns'] = inventoryReturns;
+      if (returnLocationId != null) data['return_location_id'] = returnLocationId;
+      if (notes != null) data['notes'] = notes;
+
+      final response = await _apiService.client.patch('/services/assigned/$assignedId', 
+        data: data
+      );
+      if (response.statusCode == 200) {
+        await fetchRequests(); // Refresh
+        await fetchAssignedServices();
+      }
+    } catch (e) {
+      print('Error updating assigned service status: $e');
       rethrow;
     }
   }
@@ -106,5 +147,17 @@ class ServiceProvider with ChangeNotifier {
        print('Error creating request: $e');
     }
     return false;
+  }
+
+  Future<List<dynamic>> fetchAssignedServiceInventory(int assignedId) async {
+    try {
+      final response = await _apiService.client.get('/services/assigned/$assignedId/inventory');
+      if (response.statusCode == 200) {
+        return response.data ?? [];
+      }
+    } catch (e) {
+      print('Error fetching assigned service inventory: $e');
+    }
+    return [];
   }
 }

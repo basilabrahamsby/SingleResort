@@ -210,6 +210,72 @@ def update_expense_status(
     db.commit()
     return {"message": "Status updated"}
 
+
+# Budget categories with default values
+DEFAULT_BUDGETS = {
+    "Utilities": 50000,
+    "Maintenance": 75000,
+    "Salary": 300000,
+    "Food & Beverage": 100000,
+    "Marketing": 40000,
+    "Transportation": 30000,
+    "Supplies": 60000,
+    "Other": 50000
+}
+
+def _get_budgets_from_db(db: Session) -> dict:
+    """Read budget values from system_settings table, fall back to defaults."""
+    from app.models.settings import SystemSetting
+    budgets = dict(DEFAULT_BUDGETS)  # start with defaults
+    for category in DEFAULT_BUDGETS:
+        key = f"budget_{category.replace(' ', '_').replace('&', 'and')}"
+        setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        if setting and setting.value:
+            try:
+                budgets[category] = float(setting.value)
+            except ValueError:
+                pass  # keep default
+    return budgets
+
+
+@router.get("/budgets")
+def get_budgets(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get current budget settings for all expense categories."""
+    budgets = _get_budgets_from_db(db)
+    return {"budgets": [{"category": k, "amount": v} for k, v in budgets.items()]}
+
+
+@router.post("/budgets")
+def save_budgets(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Save budget amounts for expense categories.
+    Payload: { "budgets": { "Utilities": 60000, "Salary": 350000, ... } }
+    """
+    from app.models.settings import SystemSetting
+    budgets = payload.get("budgets", {})
+    for category, amount in budgets.items():
+        key = f"budget_{category.replace(' ', '_').replace('&', 'and')}"
+        setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+        if setting:
+            setting.value = str(amount)
+        else:
+            setting = SystemSetting(
+                key=key,
+                value=str(amount),
+                description=f"Monthly budget for {category}"
+            )
+            db.add(setting)
+    db.commit()
+    return {"message": "Budget settings saved successfully"}
+
+
 @router.get("/budget-analysis")
 def get_budget_analysis(
     db: Session = Depends(get_db),
@@ -217,29 +283,19 @@ def get_budget_analysis(
 ):
     """
     Get budget vs actual spending analysis by category for current month.
-    Returns category-wise budget, actual spending, and variance.
+    Budget amounts are read from system_settings (set via /expenses/budgets).
     """
     from datetime import datetime, date
     from sqlalchemy import func, extract
-    from app.models.expenses import Expense
-    
-    # Get current month
+    from app.models.expense import Expense
+
     today = date.today()
     current_month = today.month
     current_year = today.year
-    
-    # Predefined monthly budgets by category (in future, this could come from a Budget table)
-    category_budgets = {
-        "Utilities": 50000,
-        "Maintenance": 75000,
-        "Salary": 300000,
-        "Food & Beverage": 100000,
-        "Marketing": 40000,
-        "Transportation": 30000,
-        "Supplies": 60000,
-        "Other": 50000
-    }
-    
+
+    # Load budgets from DB (with defaults fallback)
+    category_budgets = _get_budgets_from_db(db)
+
     # Get actual spending by category for current month
     actual_spending = db.query(
         Expense.category,
@@ -247,18 +303,15 @@ def get_budget_analysis(
     ).filter(
         extract('month', Expense.date) == current_month,
         extract('year', Expense.date) == current_year,
-        Expense.status != 'Rejected'
     ).group_by(Expense.category).all()
-    
-    # Build response
-    budget_data = []
+
     actual_by_category = {item.category: float(item.total) for item in actual_spending}
-    
+
+    budget_data = []
     for category, budget in category_budgets.items():
         actual = actual_by_category.get(category, 0.0)
         variance = budget - actual
         percentage_used = (actual / budget * 100) if budget > 0 else 0
-        
         budget_data.append({
             "category": category,
             "budget": budget,
@@ -267,8 +320,8 @@ def get_budget_analysis(
             "percentage_used": round(percentage_used, 1),
             "status": "over_budget" if actual > budget else "within_budget"
         })
-    
-    # Add categories with spending but no budget
+
+    # Include categories with spending but no budget defined
     for category, actual in actual_by_category.items():
         if category not in category_budgets:
             budget_data.append({
@@ -279,7 +332,7 @@ def get_budget_analysis(
                 "percentage_used": 0,
                 "status": "no_budget"
             })
-    
+
     return {
         "month": today.strftime("%B %Y"),
         "categories": budget_data,
@@ -287,3 +340,4 @@ def get_budget_analysis(
         "total_actual": sum(actual_by_category.values()),
         "total_variance": sum(category_budgets.values()) - sum(actual_by_category.values())
     }
+

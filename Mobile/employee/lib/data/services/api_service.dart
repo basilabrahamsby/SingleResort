@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:orchid_employee/core/constants/api_constants.dart';
 import 'package:orchid_employee/core/constants/app_constants.dart';
+import 'dart:convert';
 
 class ApiService {
   final Dio _dio = Dio();
@@ -58,12 +59,14 @@ class ApiService {
     );
   }
 
-  Future<Response> clockIn(int employeeId, String location) async {
+  Future<Response> clockIn(int employeeId, String location, {double? latitude, double? longitude}) async {
     return await _dio.post(
       '/attendance/clock-in',
       data: {
         'employee_id': employeeId,
         'location': location,
+        if (latitude != null) 'latitude': latitude,
+        if (longitude != null) 'longitude': longitude,
       },
     );
   }
@@ -78,7 +81,19 @@ class ApiService {
   }
 
   Future<Response> getWorkLogs(int employeeId) async {
-    return await _dio.get('/attendance/work-logs/$employeeId');
+    return await _dio.get(
+      '/attendance/work-logs/$employeeId',
+      queryParameters: {'_': DateTime.now().millisecondsSinceEpoch},
+    );
+  }
+
+  Future<Response> updateWorkLogTasks(int logId, List<String> completedTasks) async {
+    return await _dio.put(
+      '/attendance/work-logs/$logId/tasks',
+      data: {
+        'completed_tasks': jsonEncode(completedTasks),
+      },
+    );
   }
 
   Future<Response> getMonthlyReport(int employeeId, int year, int month) async {

@@ -4,6 +4,8 @@ class WorkingLog {
   final String? checkInTime;
   final String? checkOutTime;
   final String? location;
+  final double? latitude;
+  final double? longitude;
   final double? durationHours;
 
   WorkingLog({
@@ -12,6 +14,8 @@ class WorkingLog {
     this.checkInTime,
     this.checkOutTime,
     this.location,
+    this.latitude,
+    this.longitude,
     this.durationHours,
   });
 
@@ -22,6 +26,8 @@ class WorkingLog {
       checkInTime: json['check_in_time'],
       checkOutTime: json['check_out_time'],
       location: json['location'],
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
       durationHours: (json['duration_hours'] as num?)?.toDouble(),
     );
   }

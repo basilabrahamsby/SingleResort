@@ -102,12 +102,26 @@ def get_service_requests(
         
         try:
             food_order_data = None
+            guest_name = None
+            prepared_by_name = None
+
             if sr.food_order:
+                    # Get Guest Name
+                    if sr.food_order.booking:
+                        guest_name = sr.food_order.booking.guest_name
+                    elif sr.food_order.package_booking:
+                        guest_name = sr.food_order.package_booking.guest_name
+                    
+                    # Get Prepared By Name (Chef)
+                    if sr.food_order.chef:
+                        prepared_by_name = sr.food_order.chef.name
+
                     food_order_data = {
                     "id": sr.food_order.id,
                     "amount": sr.food_order.amount,
                     "status": sr.food_order.status,
                     "billing_status": sr.food_order.billing_status,
+                    "prepared_by_name": prepared_by_name,
                     "items": [
                         {
                             "id": item.id,
@@ -117,6 +131,10 @@ def get_service_requests(
                         } for item in sr.food_order.items
                     ] if sr.food_order.items else []
                 }
+
+            fo_amount = sr.food_order.amount if sr.food_order else getattr(sr, 'food_order_amount', 0)
+            fo_gst = sr.food_order.gst_amount if sr.food_order and sr.food_order.gst_amount else (fo_amount * 0.05 if fo_amount else 0)
+            fo_total = sr.food_order.total_with_gst if sr.food_order and sr.food_order.total_with_gst else (fo_amount + fo_gst if fo_amount else 0)
 
             result.append({
                 "id": sr.id,
@@ -135,8 +153,12 @@ def get_service_requests(
                 "is_assigned_service": False,
                 "room_number": sr.room.number if sr.room else (str(getattr(sr, 'room_number', '')) if getattr(sr, 'room_number', None) else None),
                 "employee_name": sr.employee.name if sr.employee else (str(getattr(sr, 'employee_name', '')) if getattr(sr, 'employee_name', None) else None),
+                "guest_name": guest_name,
+                "prepared_by_name": prepared_by_name,
                 "refill_data": refill_data,
-                "food_order_amount": sr.food_order.amount if sr.food_order else getattr(sr, 'food_order_amount', 0),
+                "food_order_amount": fo_amount,
+                "food_order_gst": fo_gst,
+                "food_order_total": fo_total,
                 "food_order_status": sr.food_order.status if sr.food_order else getattr(sr, 'food_order_status', None),
                 "food_order_billing_status": sr.food_order.billing_status if sr.food_order else getattr(sr, 'food_order_billing_status', None),
                 "food_items": food_order_data["items"] if food_order_data else []
@@ -360,7 +382,7 @@ def get_service_request(
         raise HTTPException(status_code=404, detail="Service request not found")
     return request
 
-@router.put("/{request_id}", response_model=ServiceRequestOut)
+@router.put("/{request_id}")
 def update_service_request(
     request_id: int,
     update: ServiceRequestUpdate,
@@ -390,11 +412,13 @@ def update_service_request(
         if update.employee_id is not None:
             checkout_request.employee_id = update.employee_id
         if update.status is not None:
+            old_checkout_status = checkout_request.status
             checkout_request.status = update.status
             if update.status == "in_progress" and not checkout_request.started_at:
                 checkout_request.started_at = datetime.utcnow()
             elif update.status == "completed":
                 checkout_request.completed_at = datetime.utcnow()
+            print(f"[INFO] CheckoutRequest {actual_checkout_id} status: {old_checkout_status} -> {update.status}")
         
         db.commit()
         db.refresh(checkout_request)
@@ -404,14 +428,26 @@ def update_service_request(
         return {
             "id": request_id,
             "food_order_id": None,
+            "food_order": None,
             "room_id": room.id if room else None,
             "employee_id": checkout_request.employee_id,
             "request_type": "checkout_verification",
+            "type": "checkout_verification",
             "description": f"Checkout inventory verification for Room {checkout_request.room_number}",
             "status": checkout_request.status,
-            "created_at": checkout_request.created_at,
-            "started_at": checkout_request.started_at,
-            "completed_at": checkout_request.completed_at,
+            "billing_status": None,
+            "created_at": checkout_request.created_at.isoformat() if checkout_request.created_at else None,
+            "started_at": checkout_request.started_at.isoformat() if checkout_request.started_at else None,
+            "completed_at": checkout_request.completed_at.isoformat() if checkout_request.completed_at else None,
+            "is_checkout_request": True,
+            "is_assigned_service": False,
+            "room_number": checkout_request.room_number,
+            "employee_name": checkout_request.employee.name if checkout_request.employee else None,
+            "refill_data": None,
+            "food_order_amount": None,
+            "food_order_status": None,
+            "food_order_billing_status": None,
+            "food_items": [],
             "service": {
                 "id": 0,
                 "name": "Checkout Verification",
@@ -428,7 +464,9 @@ def update_service_request(
         
         # Check authorization
         as_existing = db.query(AssignedServiceModel).filter(AssignedServiceModel.id == actual_assigned_id).first()
-        if as_existing and not is_admin:
+        if not as_existing:
+            raise HTTPException(status_code=404, detail="Assigned service not found")
+        if not is_admin:
              if as_existing.employee_id is not None and as_existing.employee_id != current_employee_id:
                   raise HTTPException(status_code=403, detail="Task assigned to another employee")
 
@@ -443,18 +481,34 @@ def update_service_request(
         updated_asvc = update_assigned_service_status(db, actual_assigned_id, as_update)
         if not updated_asvc:
             raise HTTPException(status_code=404, detail="Assigned service not found")
+
+        asvc_status = str(updated_asvc.status.value if hasattr(updated_asvc.status, 'value') else updated_asvc.status)
+        print(f"[INFO] AssignedService {actual_assigned_id} updated to status={asvc_status}")
             
         return {
             "id": request_id,
             "food_order_id": None,
+            "food_order": None,
             "room_id": updated_asvc.room_id,
             "employee_id": updated_asvc.employee_id,
             "request_type": updated_asvc.service.name if updated_asvc.service else "Service",
+            "type": updated_asvc.service.name if updated_asvc.service else "Service",
             "description": updated_asvc.service.description if updated_asvc.service else "",
-            "status": str(updated_asvc.status.value if hasattr(updated_asvc.status, 'value') else updated_asvc.status),
-            "created_at": updated_asvc.assigned_at,
-            "started_at": updated_asvc.started_at,
-            "completed_at": getattr(updated_asvc, 'last_used_at', None),
+            "status": asvc_status,
+            "billing_status": updated_asvc.billing_status,
+            "created_at": updated_asvc.assigned_at.isoformat() if updated_asvc.assigned_at else None,
+            "started_at": updated_asvc.started_at.isoformat() if getattr(updated_asvc, 'started_at', None) else None,
+            "completed_at": updated_asvc.completed_at.isoformat() if getattr(updated_asvc, 'completed_at', None) else None,
+            "is_checkout_request": False,
+            "is_assigned_service": True,
+            "assigned_service_id": updated_asvc.id,
+            "room_number": updated_asvc.room.number if updated_asvc.room else None,
+            "employee_name": updated_asvc.employee.name if updated_asvc.employee else None,
+            "refill_data": None,
+            "food_order_amount": None,
+            "food_order_status": None,
+            "food_order_billing_status": None,
+            "food_items": [],
             "service": {
                 "id": updated_asvc.service.id if updated_asvc.service else 0,
                 "name": updated_asvc.service.name if updated_asvc.service else "Service",
@@ -475,7 +529,63 @@ def update_service_request(
     updated = crud.update_service_request(db, request_id, update)
     if not updated:
         raise HTTPException(status_code=404, detail="Service request not found")
-    return updated
+    
+    # Reload with all relationships to populate computed fields (room_number, food_order_status, etc.)
+    reloaded = crud.get_service_request(db, request_id)
+    if not reloaded:
+        reloaded = updated
+
+    old_status_str = str(existing.status)
+    new_status_str = str(reloaded.status)
+    print(f"[INFO] ServiceRequest {request_id} status: {old_status_str} -> {new_status_str}")
+
+    # Build response dict (same structure as GET endpoint) to avoid Pydantic serialization issues
+    food_order_data = None
+    if reloaded.food_order:
+        food_order_data = {
+            "id": reloaded.food_order.id,
+            "amount": reloaded.food_order.amount,
+            "status": reloaded.food_order.status,
+            "billing_status": reloaded.food_order.billing_status,
+            "prepared_by_name": reloaded.food_order.chef.name if reloaded.food_order.chef else None,
+            "items": [
+                {
+                    "id": item.id,
+                    "food_item_id": item.food_item_id,
+                    "food_item_name": item.food_item.name if item.food_item else "Unknown",
+                    "quantity": item.quantity
+                } for item in reloaded.food_order.items
+            ] if reloaded.food_order.items else []
+        }
+
+    return {
+        "id": reloaded.id,
+        "food_order_id": reloaded.food_order_id,
+        "food_order": food_order_data,
+        "room_id": reloaded.room_id,
+        "employee_id": reloaded.employee_id,
+        "request_type": str(reloaded.request_type) if reloaded.request_type else None,
+        "type": str(reloaded.request_type) if reloaded.request_type else "Other",
+        "description": str(reloaded.description) if reloaded.description else None,
+        "status": str(reloaded.status) if reloaded.status else "pending",
+        "billing_status": reloaded.billing_status,
+        "created_at": reloaded.created_at.isoformat() if reloaded.created_at else None,
+        "started_at": reloaded.started_at.isoformat() if reloaded.started_at else None,
+        "completed_at": reloaded.completed_at.isoformat() if reloaded.completed_at else None,
+        "is_checkout_request": False,
+        "is_assigned_service": False,
+        "room_number": reloaded.room.number if reloaded.room else None,
+        "employee_name": reloaded.employee.name if reloaded.employee else None,
+        "refill_data": json.loads(reloaded.refill_data) if reloaded.refill_data else None,
+        "food_order_amount": reloaded.food_order.amount if reloaded.food_order else 0,
+        "food_order_gst": reloaded.food_order.gst_amount if reloaded.food_order and reloaded.food_order.gst_amount else ((reloaded.food_order.amount * 0.05) if reloaded.food_order and reloaded.food_order.amount else 0),
+        "food_order_total": reloaded.food_order.total_with_gst if reloaded.food_order and reloaded.food_order.total_with_gst else ((reloaded.food_order.amount * 1.05) if reloaded.food_order and reloaded.food_order.amount else 0),
+        "food_order_status": reloaded.food_order.status if reloaded.food_order else None,
+        "food_order_billing_status": reloaded.food_order.billing_status if reloaded.food_order else None,
+        "guest_name": reloaded.food_order.booking.guest_name if reloaded.food_order and reloaded.food_order.booking else (reloaded.food_order.package_booking.guest_name if reloaded.food_order and reloaded.food_order.package_booking else None),
+        "prepared_by_name": reloaded.food_order.chef.name if reloaded.food_order and reloaded.food_order.chef else None,
+        "food_items": food_order_data["items"] if food_order_data else []
+    }
 
 @router.delete("/{request_id}")
 def delete_service_request(

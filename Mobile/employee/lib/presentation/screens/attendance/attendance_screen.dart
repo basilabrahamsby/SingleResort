@@ -6,6 +6,8 @@ import 'package:orchid_employee/core/constants/app_colors.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:orchid_employee/presentation/providers/leave_provider.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:convert';
 
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({super.key});
@@ -18,6 +20,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool _isClockedIn = false;
   bool _isLoading = false;
   DateTime? _clockInTime;
+  int? _activeLogId;
+  List<String> _completedTasks = [];
   
   @override
   void initState() {
@@ -40,6 +44,41 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   void dispose() {
     super.dispose();
+  }
+
+  Future<Position?> _getCurrentLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    try {
+      // Test if location services are enabled.
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        return null;
+      }
+
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          return null;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        return null;
+      }
+
+      // When we reach here, permissions are granted and we can
+      // continue accessing the position of the device.
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5),
+      );
+    } catch (e) {
+      print("Location error: $e");
+      return null;
+    }
   }
 
   Future<void> _checkClockInStatus() async {
@@ -72,6 +111,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               setState(() {
                 _isClockedIn = true;
                 _clockInTime = istDateTime;
+                _activeLogId = todayLog['id'];
+                
+                if (todayLog['completed_tasks'] != null) {
+                  try {
+                    List<dynamic> parsed = jsonDecode(todayLog['completed_tasks']);
+                    _completedTasks = parsed.map((e) => e.toString()).toList();
+                  } catch (_) {
+                    _completedTasks = [];
+                  }
+                } else {
+                  _completedTasks = [];
+                }
               });
             } catch (e) {
               print('Error parsing clock-in time: $e');
@@ -96,12 +147,113 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return;
     }
 
+    final tasks = authProvider.dailyTasks;
+
+    if (tasks.isEmpty) {
+      // No tasks, proceed directly
+      await _executeClockInOut(context, authProvider, attendanceProvider, employeeId);
+      return;
+    }
+
+    // Show dialog with checklist
+    List<String> currentCompleted = _isClockedIn 
+        ? List<String>.from(_completedTasks)
+        : []; 
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            bool allChecked = true;
+            for (String t in tasks) {
+              if (!currentCompleted.contains(t)) {
+                allChecked = false;
+                break;
+              }
+            }
+
+            return AlertDialog(
+              title: Text(!_isClockedIn ? 'Pre-Shift Task Check' : 'End-Shift Task Check'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      !_isClockedIn 
+                          ? 'Please acknowledge your assigned daily tasks for today before starting.'
+                          : 'Please confirm completion of all your daily tasks before leaving.',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: tasks.length,
+                        itemBuilder: (context, index) {
+                          final task = tasks[index];
+                          final isChecked = currentCompleted.contains(task);
+                          return CheckboxListTile(
+                            title: Text(task),
+                            value: isChecked,
+                            onChanged: (val) {
+                              setDialogState(() {
+                                if (val == true) {
+                                  currentCompleted.add(task);
+                                } else {
+                                  currentCompleted.remove(task);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: allChecked ? () async {
+                    Navigator.pop(context); // Close dialog
+
+                    await _executeClockInOut(context, authProvider, attendanceProvider, employeeId, tasksToSync: currentCompleted);
+                  } : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: allChecked ? Colors.green : Colors.grey,
+                  ),
+                  child: Text(!_isClockedIn ? 'Acknowledge & Clock In' : 'Complete & Clock Out', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _executeClockInOut(BuildContext context, AuthProvider authProvider, AttendanceProvider attendanceProvider, int employeeId, {List<String>? tasksToSync}) async {
     setState(() => _isLoading = true);
 
     try {
       final apiService = ApiService();
       
       if (_isClockedIn) {
+        // Update backend with tasks completed if tracking
+        if (tasksToSync != null && _activeLogId != null) {
+           try {
+             await apiService.updateWorkLogTasks(_activeLogId!, tasksToSync);
+           } catch (e) {
+             print("Failed to sync tasks: $e");
+           }
+        }
+
         // Clock Out
         final response = await apiService.clockOut(employeeId);
         if (response.statusCode == 200) {
@@ -119,14 +271,35 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         }
       } else {
         // Clock In
-        final response = await apiService.clockIn(employeeId, "Mobile App");
+        Position? position = await _getCurrentLocation();
+        final response = await apiService.clockIn(
+          employeeId, 
+          "Mobile App",
+          latitude: position?.latitude,
+          longitude: position?.longitude,
+        );
         if (response.statusCode == 200) {
+          int? newLogId = response.data?['id'];
           setState(() {
             _isClockedIn = true;
             _clockInTime = DateTime.now();
+            if (newLogId != null) _activeLogId = newLogId;
+            if (tasksToSync != null) {
+              _completedTasks = List.from(tasksToSync);
+            }
           });
+          
+          if (tasksToSync != null && newLogId != null && tasksToSync.isNotEmpty) {
+             try {
+               await apiService.updateWorkLogTasks(newLogId, tasksToSync);
+             } catch(e) {
+               print("Failed to sync initial tasks on clock in: $e");
+             }
+          }
+
           // Refresh work logs
-          attendanceProvider.fetchWorkLogs(employeeId);
+          await attendanceProvider.checkTodayStatus(employeeId);
+          await attendanceProvider.fetchWorkLogs(employeeId);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text("✓ Clocked In Successfully")),

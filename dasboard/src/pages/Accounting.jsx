@@ -1,25 +1,248 @@
 import React, { useState, useEffect } from "react";
 import DashboardLayout from "../layout/DashboardLayout";
 import api from "../services/api";
-import { 
-  BookOpen, 
-  FileText, 
-  Calculator, 
-  Plus, 
-  Edit, 
-  Trash2, 
+import {
+  BookOpen,
+  FileText,
+  Calculator,
+  Plus,
+  Edit,
+  Trash2,
   Search,
   DollarSign,
   TrendingUp,
   TrendingDown,
   CheckCircle,
-  XCircle
+  XCircle,
+  Info,
+  ChevronDown,
+  ChevronUp,
+  ShoppingCart,
+  Receipt,
+  BarChart3
 } from "lucide-react";
+
+// ── GST Report Info Definitions ─────────────────────────────────────────────
+const GST_REPORT_INFO = {
+  'master-gst-summary': {
+    title: 'Master GST Summary',
+    icon: BarChart3,
+    color: 'indigo',
+    description: 'A consolidated overview of all GST activity — output tax collected from guests, input tax credits from purchases, and net liability.',
+    includes: [
+      'Total taxable sales (CGST + SGST + IGST)',
+      'Total purchases eligible for ITC',
+      'Net GST payable = Output GST − ITC',
+      'RCM liability summary',
+    ],
+    calculation: 'Aggregates all checkout revenue (room, food, service) grouped by tax rate. Input tax is pulled from purchase orders. Net = Output GST − ITC claimed.',
+    use: "Use to get a bird\u2019s-eye view before filing GST returns. Core figure for GSTR-3B filing (due 20th of following month).",
+    filingRef: 'Summary for GSTR-3B filing',
+    keyFields: ['Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Output Tax', 'Total ITC', 'Net Payable'],
+    endpoint: '/gst-reports/master-summary',
+  },
+  'gstr-1-sales': {
+    title: 'Sales / GSTR-1 (B2B)',
+    icon: TrendingUp,
+    color: 'green',
+    description: 'Lists all B2B taxable sales to GST-registered businesses. Required for GSTR-1 filing on the 11th of each month.',
+    includes: [
+      'Invoice-wise sales to GST-registered customers',
+      'Customer GSTIN, invoice number, date, taxable value',
+      'CGST, SGST, IGST split per invoice',
+      'Exempt and nil-rated supplies',
+    ],
+    calculation: 'Pulls all checkout invoices where guest GSTIN is recorded. Tax calculated at applicable slab rate (e.g., 12% room = 6% CGST + 6% SGST).',
+    use: 'Your outward supply register — directly used for GSTR-1 filing.',
+    filingRef: 'GSTR-1 (Table 4A – B2B Invoices)',
+    keyFields: ['GSTIN of Recipient', 'Invoice No.', 'Invoice Date', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax'],
+    endpoint: '/gst-reports/b2b-sales',
+  },
+  'itc-register': {
+    title: 'Purchases / ITC Register',
+    icon: ShoppingCart,
+    color: 'blue',
+    description: 'Records all inward supplies (purchases) on which Input Tax Credit (ITC) can be claimed to offset your GST liability.',
+    includes: [
+      'Vendor name and GSTIN',
+      'Invoice number, date, and amount',
+      'CGST, SGST, IGST paid to vendor',
+      'Eligible ITC vs. blocked credit',
+    ],
+    calculation: 'Pulls all purchase orders with vendor invoices. Reconciled against GSTR-2B portal data.',
+    use: "Use to claim Input Tax Credit in GSTR-3B. Ensures you only claim ITC reflected in your vendor\u2019s GSTR-1.",
+    filingRef: 'GSTR-3B (Table 4 – ITC available)',
+    keyFields: ['Vendor GSTIN', 'Invoice No.', 'Purchase Date', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Eligible ITC'],
+    endpoint: '/gst-reports/itc-register',
+  },
+  'rcm-register': {
+    title: 'RCM Register',
+    icon: Receipt,
+    color: 'orange',
+    description: 'Tracks purchases from unregistered vendors where GST must be paid by you (the recipient) under Reverse Charge Mechanism.',
+    includes: [
+      'Unregistered vendor invoices',
+      'GST amount self-assessed and payable',
+      'Category of supply triggering RCM',
+      'Payment date and period',
+    ],
+    calculation: 'Identifies purchase entries marked as RCM. Tax at applicable rate on taxable value. Becomes a payable in GSTR-3B.',
+    use: "RCM amounts must be declared and paid in GSTR-3B even though vendor didn\u2019t charge GST. ITC on RCM can be claimed same month.",
+    filingRef: 'GSTR-3B (Table 3.1d – Inward under RCM)',
+    keyFields: ['Vendor Name', 'Invoice No.', 'Date', 'Supply Category', 'Taxable Value', 'RCM Tax Payable', 'ITC Eligible'],
+    endpoint: '/gst-reports/rcm-register',
+  },
+};
+
+const COLOR_MAP = {
+  indigo: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', badge: 'bg-indigo-100 text-indigo-800', icon: 'text-indigo-500' },
+  green: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', badge: 'bg-green-100 text-green-800', icon: 'text-green-500' },
+  blue: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800', icon: 'text-blue-500' },
+  orange: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', badge: 'bg-orange-100 text-orange-800', icon: 'text-orange-500' },
+};
+
+// ── Accounting Section Info ─────────────────────────────────────────────────
+const SECTION_INFO = {
+  'chart-of-accounts': {
+    title: 'Chart of Accounts (CoA)',
+    color: 'indigo',
+    description: 'The master list of all financial accounts used in your business. Every transaction must be assigned to an account.',
+    includes: [
+      'Account Groups — categories like Assets, Liabilities, Revenue, Expenses, Tax',
+      'Account Ledgers — specific accounts within each group (e.g., Cash, Bank, Room Revenue)',
+      'Account code, opening balance, and module linkage',
+      'Balance type: Debit (assets/expenses) or Credit (liabilities/revenue)',
+    ],
+    calculation: 'Not a calculated report — it is a structural setup. Every transaction (booking, purchase, salary) posts to specific ledgers here. Balances accumulate over time.',
+    use: 'Set up once when starting accounting. Add groups for each category of money flow. Add ledgers for specific accounts. Used as the backbone of all other reports (Trial Balance, P&L, GST).',
+    tip: 'Tip: Click on a Group to filter ledgers belonging to it.',
+  },
+  'journal-entries': {
+    title: 'Journal Entries',
+    color: 'blue',
+    description: 'The foundation of double-entry bookkeeping. Every financial event is recorded as a journal entry with at least one debit and one credit that must be equal.',
+    includes: [
+      'Entry number, date, and description',
+      'Lines: Debit ledger + Credit ledger + Amount for each line',
+      'Reference to source transaction (Booking, Purchase, etc.)',
+      'Total amount must balance (Total Debits = Total Credits)',
+    ],
+    calculation: 'For example: When a guest checks out paying ₹5,000 — Debit: Cash A/c ₹5,000, Credit: Room Revenue A/c ₹5,000. Both sides are equal, ensuring the books always balance.',
+    use: 'Use to record any financial event not automatically captured. Automatic journal entries are created by the system for bookings, purchases, and salaries. Manual entries are for adjustments, corrections, opening balances.',
+    tip: 'Tip: Debits increase Assets/Expenses. Credits increase Liabilities/Revenue.',
+  },
+  'trial-balance': {
+    title: 'Trial Balance',
+    color: 'green',
+    description: 'A summary of all ledger balances at a point in time. Verifies that Total Debits = Total Credits — confirming the books are mathematically balanced.',
+    includes: [
+      'Every active ledger account with its net balance',
+      'Balance shown as Debit or Credit column',
+      'Total row showing sum of all debits and sum of all credits',
+      'Is Balanced indicator — should always be YES',
+    ],
+    calculation: 'For each ledger: Net Balance = Sum of all Debits posted − Sum of all Credits posted. Asset/Expense accounts normally show Debit balances. Liability/Revenue accounts show Credit balances.',
+    use: 'Run this at month-end before preparing the P&L and Balance Sheet. If it is out of balance, there is a data entry error somewhere that needs correction.',
+    tip: 'If out of balance, look for journal entries where debits ≠ credits.',
+  },
+  'automatic-reports': {
+    title: 'Automatic Financial Reports',
+    color: 'blue',
+    description: 'Dynamic reports generated automatically by analyzing every business event (bookings, food, services, expenses). No manual entries required.',
+    includes: [
+      'Automatic Profit & Loss (P&L)',
+      'Department-wise revenue analysis',
+      'Inventory consumption & COGS tracking',
+      'Operating expense summaries',
+    ],
+    calculation: 'Instead of looking at manual journal entries, these reports query the raw operational tables directly (Checkout, PurchaseDetail, Expense) to provide a real-time view of profitability.',
+    use: 'Use for a quick, "no-accounting-knowledge" view of how the business is performing today. Refreshes instantly when a guest checks out or a purchase is made.',
+    tip: 'Note: These reports are separate from the formal Accounting ledger reports.',
+  },
+  'comprehensive-report': {
+    title: 'Comprehensive Master Report',
+    color: 'indigo',
+    description: 'The master data extract of the entire resort operation. Aggregates records from every module into a single view.',
+    includes: [
+      'Master list of all Checkouts, Bookings, and Food Orders',
+      'Complete Service history and Employee logs',
+      'Every inventory transaction and purchase master',
+      'Full record history available for export',
+    ],
+    calculation: 'A raw data dump from the operational database. It does not perform accounting balancing — it simply shows you exactly what was recorded in each module.',
+    use: 'Use when you need to find a specific transaction or audit all activity within a date range. Great for deep-diving into operational history.',
+    tip: 'Tip: Use the date filters to narrow down the master record list.',
+  },
+};
+
+// ── Section Info Popover Component ────────────────────────────────────
+const SectionInfoPanel = ({ sectionKey, open, onClose }) => {
+  const info = SECTION_INFO[sectionKey];
+  if (!info || !open) return null;
+  const colorMap = {
+    indigo: { header: 'from-indigo-600 to-indigo-700', badge: 'bg-indigo-100 text-indigo-700', dot: 'bg-indigo-400', border: 'border-indigo-200', bg: 'bg-indigo-50' },
+    blue: { header: 'from-blue-600 to-blue-700', badge: 'bg-blue-100 text-blue-700', dot: 'bg-blue-400', border: 'border-blue-200', bg: 'bg-blue-50' },
+    green: { header: 'from-green-600 to-green-700', badge: 'bg-green-100 text-green-700', dot: 'bg-green-400', border: 'border-green-200', bg: 'bg-green-50' },
+  };
+  const c = colorMap[info.color];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className={`bg-gradient-to-r ${c.header} px-6 py-5 flex items-center justify-between`}>
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2"><Info size={18} className="text-white" /></div>
+            <h2 className="text-lg font-bold text-white">{info.title}</h2>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white"><ChevronDown size={20} /></button>
+        </div>
+        {/* Body */}
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          <p className="text-gray-700 text-sm leading-relaxed">{info.description}</p>
+
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">What It Includes</p>
+            <ul className="space-y-1.5">
+              {info.includes.map((item, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                  <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.dot}`} />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-1">How It Works</p>
+            <p className="text-sm text-amber-800 leading-relaxed">{info.calculation}</p>
+          </div>
+
+          <div className={`${c.bg} border ${c.border} rounded-xl p-3`}>
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-600 mb-1">How To Use</p>
+            <p className="text-sm text-gray-700 leading-relaxed">{info.use}</p>
+          </div>
+
+          {info.tip && (
+            <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 flex items-start gap-2">
+              <span className="text-yellow-500 text-base">💡</span>
+              <p className="text-sm text-yellow-800">{info.tip}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 export default function Accounting() {
   const [activeTab, setActiveTab] = useState("chart-of-accounts");
   const [loading, setLoading] = useState(false);
-  
+  const [gstInfoOpen, setGstInfoOpen] = useState({});
+  const [gstSummary, setGstSummary] = useState(null);
+  const [gstLoading, setGstLoading] = useState(false);
+  const [sectionInfoOpen, setSectionInfoOpen] = useState(null); // 'chart-of-accounts' | 'journal-entries' | 'trial-balance'
+
   // Chart of Accounts State
   const [accountGroups, setAccountGroups] = useState([]);
   const [accountLedgers, setAccountLedgers] = useState([]);
@@ -28,21 +251,21 @@ export default function Accounting() {
   const [showLedgerModal, setShowLedgerModal] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
   const [editingLedger, setEditingLedger] = useState(null);
-  
+
   // Journal Entries State
   const [journalEntries, setJournalEntries] = useState([]);
   const [showJournalModal, setShowJournalModal] = useState(false);
-  
+
   // Trial Balance State
   const [trialBalance, setTrialBalance] = useState(null);
-  
+
   // Form States
   const [groupForm, setGroupForm] = useState({
     name: "",
     account_type: "Revenue",
     description: ""
   });
-  
+
   const [ledgerForm, setLedgerForm] = useState({
     name: "",
     code: "",
@@ -58,7 +281,7 @@ export default function Accounting() {
     ifsc_code: "",
     branch_name: ""
   });
-  
+
   const [journalForm, setJournalForm] = useState({
     entry_date: new Date().toISOString().split('T')[0],
     description: "",
@@ -75,8 +298,25 @@ export default function Accounting() {
       fetchJournalEntries();
     } else if (activeTab === "trial-balance") {
       fetchTrialBalance();
+    } else if (activeTab === "gst-reports") {
+      fetchGstSummary();
     }
   }, [activeTab]);
+
+  const fetchGstSummary = async () => {
+    try {
+      setGstLoading(true);
+      const res = await api.get('/gst-reports/master-summary');
+      setGstSummary(res.data);
+    } catch (e) {
+      console.error('GST summary error:', e);
+    } finally {
+      setGstLoading(false);
+    }
+  };
+
+  const toggleGstInfo = (id) => setGstInfoOpen(prev => ({ ...prev, [id]: !prev[id] }));
+
 
   const fetchAccountGroups = async () => {
     try {
@@ -162,7 +402,7 @@ export default function Accounting() {
         opening_balance: parseFloat(ledgerForm.opening_balance) || 0,
         tax_rate: ledgerForm.tax_rate ? parseFloat(ledgerForm.tax_rate) : null
       };
-      
+
       if (editingLedger) {
         await api.put(`/accounts/ledgers/${editingLedger.id}`, payload);
       } else {
@@ -216,12 +456,12 @@ export default function Accounting() {
       const totalCredits = journalForm.lines
         .filter(line => line.credit_ledger_id)
         .reduce((sum, line) => sum + (parseFloat(line.amount) || 0), 0);
-      
+
       if (Math.abs(totalDebits - totalCredits) > 0.01) {
         alert(`Journal entry must balance. Debits: ₹${totalDebits.toFixed(2)}, Credits: ₹${totalCredits.toFixed(2)}`);
         return;
       }
-      
+
       const payload = {
         ...journalForm,
         entry_date: new Date(journalForm.entry_date).toISOString(),
@@ -232,7 +472,7 @@ export default function Accounting() {
           amount: parseFloat(line.amount) || 0
         }))
       };
-      
+
       await api.post("/accounts/journal-entries", payload);
       setShowJournalModal(false);
       setJournalForm({
@@ -256,47 +496,104 @@ export default function Accounting() {
     ? accountLedgers.filter(l => l.group_id === selectedGroup.id)
     : accountLedgers;
 
+  // ── Seed Chart of Accounts ──────────────────────────────────────────────
+  const [seedLoading, setSeedLoading] = useState(false);
+  const [seedDone, setSeedDone] = useState(false);
+
+  const seedChartOfAccounts = async () => {
+    if (!window.confirm('This will seed a standard hospitality Chart of Accounts (17 groups, 41 ledgers). It will be skipped if groups already exist. Continue?')) return;
+    try {
+      setSeedLoading(true);
+      // Call backend seed endpoint
+      await api.post('/accounts/seed-chart-of-accounts');
+      setSeedDone(true);
+      // Refresh data
+      await fetchAccountGroups();
+      await fetchAccountLedgers();
+      setTimeout(() => setSeedDone(false), 4000);
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Seed failed';
+      alert('Seed error: ' + msg);
+    } finally {
+      setSeedLoading(false);
+    }
+  };
+
   return (
     <DashboardLayout>
+      {/* Section Info Modal */}
+      <SectionInfoPanel
+        sectionKey={sectionInfoOpen}
+        open={!!sectionInfoOpen}
+        onClose={() => setSectionInfoOpen(null)}
+      />
+
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-800">Accounting Module</h1>
         </div>
 
         {/* Tabs */}
-        <div className="flex space-x-2 border-b border-gray-200">
+        <div className="flex space-x-2 border-b border-gray-200 flex-wrap gap-y-1">
           <button
             onClick={() => setActiveTab("chart-of-accounts")}
-            className={`px-4 py-2 font-medium ${
-              activeTab === "chart-of-accounts"
-                ? "border-b-2 border-indigo-600 text-indigo-600"
-                : "text-gray-600 hover:text-gray-800"
-            }`}
+            className={`px-4 py-2 font-medium ${activeTab === "chart-of-accounts"
+              ? "border-b-2 border-indigo-600 text-indigo-600"
+              : "text-gray-600 hover:text-gray-800"
+              }`}
           >
             <BookOpen className="inline mr-2" size={18} />
             Chart of Accounts
           </button>
           <button
             onClick={() => setActiveTab("journal-entries")}
-            className={`px-4 py-2 font-medium ${
-              activeTab === "journal-entries"
-                ? "border-b-2 border-indigo-600 text-indigo-600"
-                : "text-gray-600 hover:text-gray-800"
-            }`}
+            className={`px-4 py-2 font-medium ${activeTab === "journal-entries"
+              ? "border-b-2 border-indigo-600 text-indigo-600"
+              : "text-gray-600 hover:text-gray-800"
+              }`}
           >
             <FileText className="inline mr-2" size={18} />
             Journal Entries
           </button>
           <button
             onClick={() => setActiveTab("trial-balance")}
-            className={`px-4 py-2 font-medium ${
-              activeTab === "trial-balance"
-                ? "border-b-2 border-indigo-600 text-indigo-600"
-                : "text-gray-600 hover:text-gray-800"
-            }`}
+            className={`px-4 py-2 font-medium ${activeTab === "trial-balance"
+              ? "border-b-2 border-indigo-600 text-indigo-600"
+              : "text-gray-600 hover:text-gray-800"
+              }`}
           >
             <Calculator className="inline mr-2" size={18} />
             Trial Balance
+          </button>
+          <button
+            onClick={() => setActiveTab("gst-reports")}
+            className={`px-4 py-2 font-medium ${activeTab === "gst-reports"
+              ? "border-b-2 border-indigo-600 text-indigo-600"
+              : "text-gray-600 hover:text-gray-800"
+              }`}
+          >
+            <Receipt className="inline mr-2" size={18} />
+            GST Reports
+          </button>
+          <button
+            onClick={() => setActiveTab("automatic-reports")}
+            className={`px-4 py-2 font-medium ${activeTab === "automatic-reports"
+              ? "border-b-2 border-indigo-600 text-indigo-600"
+              : "text-gray-600 hover:text-gray-800"
+              }`}
+          >
+            <Activity className="inline mr-2" size={18} />
+            Automatic Reports
+          </button>
+          <button
+            onClick={() => setActiveTab("comprehensive-report")}
+            className={`px-4 py-2 font-medium ${activeTab === "comprehensive-report"
+              ? "border-b-2 border-indigo-600 text-indigo-600"
+              : "text-gray-600 hover:text-gray-800"
+              }`}
+          >
+            <Database className="inline mr-2" size={18} />
+            Comprehensive Report
           </button>
         </div>
 
@@ -306,29 +603,60 @@ export default function Accounting() {
             {/* Account Groups */}
             <div className="lg:col-span-1 bg-white rounded-lg shadow p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold">Account Groups</h2>
-                <button
-                  onClick={() => {
-                    setEditingGroup(null);
-                    setGroupForm({ name: "", account_type: "Revenue", description: "" });
-                    setShowGroupModal(true);
-                  }}
-                  className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-                >
-                  <Plus size={16} className="inline mr-1" />
-                  Add Group
-                </button>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold">Account Groups</h2>
+                  <button
+                    onClick={() => setSectionInfoOpen('chart-of-accounts')}
+                    className="p-1 rounded-full text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                    title="What is Chart of Accounts?"
+                  >
+                    <Info size={16} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  {/* Seed Button - shown when empty */}
+                  {accountGroups.length === 0 && (
+                    <button
+                      onClick={seedChartOfAccounts}
+                      disabled={seedLoading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white text-sm rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                      title="Seed standard hospitality CoA"
+                    >
+                      {seedLoading ? (
+                        <span className="animate-spin inline-block w-3 h-3 border border-white border-t-transparent rounded-full" />
+                      ) : (
+                        <span>🌱</span>
+                      )}
+                      {seedLoading ? 'Seeding...' : 'Seed CoA'}
+                    </button>
+                  )}
+                  {seedDone && (
+                    <span className="text-xs text-green-600 font-semibold flex items-center gap-1">
+                      <CheckCircle size={13} /> Seeded!
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setEditingGroup(null);
+                      setGroupForm({ name: "", account_type: "Revenue", description: "" });
+                      setShowGroupModal(true);
+                    }}
+                    className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                  >
+                    <Plus size={16} className="inline mr-1" />
+                    Add Group
+                  </button>
+                </div>
               </div>
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {accountGroups.map((group) => (
                   <div
                     key={group.id}
                     onClick={() => setSelectedGroup(group)}
-                    className={`p-3 rounded cursor-pointer ${
-                      selectedGroup?.id === group.id
-                        ? "bg-indigo-100 border-2 border-indigo-600"
-                        : "bg-gray-50 hover:bg-gray-100"
-                    }`}
+                    className={`p-3 rounded cursor-pointer ${selectedGroup?.id === group.id
+                      ? "bg-indigo-100 border-2 border-indigo-600"
+                      : "bg-gray-50 hover:bg-gray-100"
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <div>
@@ -455,7 +783,16 @@ export default function Accounting() {
         {activeTab === "journal-entries" && (
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Journal Entries</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold">Journal Entries</h2>
+                <button
+                  onClick={() => setSectionInfoOpen('journal-entries')}
+                  className="p-1 rounded-full text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                  title="What are Journal Entries?"
+                >
+                  <Info size={16} />
+                </button>
+              </div>
               <button
                 onClick={() => setShowJournalModal(true)}
                 className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
@@ -517,7 +854,16 @@ export default function Accounting() {
         {activeTab === "trial-balance" && (
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Trial Balance</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold">Trial Balance</h2>
+                <button
+                  onClick={() => setSectionInfoOpen('trial-balance')}
+                  className="p-1 rounded-full text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                  title="What is a Trial Balance?"
+                >
+                  <Info size={16} />
+                </button>
+              </div>
               <button
                 onClick={fetchTrialBalance}
                 className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
@@ -541,7 +887,7 @@ export default function Accounting() {
                     </span>
                   </div>
                   <div className="text-gray-600">
-                    Total Debits: ₹{trialBalance.total_debits.toFixed(2)} | 
+                    Total Debits: ₹{trialBalance.total_debits.toFixed(2)} |
                     Total Credits: ₹{trialBalance.total_credits.toFixed(2)}
                   </div>
                 </div>
@@ -953,6 +1299,123 @@ export default function Accounting() {
             </div>
           </div>
         )}
+        {/* GST Reports Tab */}
+        {activeTab === "gst-reports" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-800">GST Reports</h2>
+              <span className="text-sm text-gray-500">Click <Info size={14} className="inline" /> to learn about each report</span>
+            </div>
+
+            {/* GST Liability Summary Banner */}
+            {gstLoading && (
+              <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500">Loading GST summary...</div>
+            )}
+            {gstSummary && !gstLoading && (
+              <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-6 text-white shadow-lg">
+                <p className="text-sm font-medium opacity-75 mb-3">GST Liability Summary (Current Period)</p>
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="text-center">
+                    <p className="text-xs opacity-70">Output GST</p>
+                    <p className="text-2xl font-bold">₹{(gstSummary.total_output_tax || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs opacity-70">Input ITC</p>
+                    <p className="text-2xl font-bold">₹{(gstSummary.total_input_tax || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs opacity-70">Net Payable</p>
+                    <p className="text-2xl font-bold">₹{((gstSummary.total_output_tax || 0) - (gstSummary.total_input_tax || 0)).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* GST Report Cards with Info Buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {Object.entries(GST_REPORT_INFO).map(([id, info]) => {
+                const colors = COLOR_MAP[info.color];
+                const isOpen = gstInfoOpen[id];
+                const IconComp = info.icon;
+                return (
+                  <div key={id} className={`bg-white rounded-xl shadow border ${isOpen ? colors.border : 'border-gray-100'} overflow-hidden transition-all`}>
+                    {/* Card Header */}
+                    <div className="flex items-center gap-3 p-4">
+                      <div className={`p-2 rounded-lg ${colors.bg}`}>
+                        <IconComp size={20} className={colors.icon} />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-800">{info.title}</h3>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${colors.badge}`}>{info.filingRef}</span>
+                      </div>
+                      <button
+                        onClick={() => toggleGstInfo(id)}
+                        className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${isOpen ? `${colors.bg} ${colors.text}` : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        title={isOpen ? 'Hide info' : 'About this report'}
+                      >
+                        <Info size={15} />
+                        {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    </div>
+                    <p className="px-4 pb-3 text-sm text-gray-500">{info.description}</p>
+
+                    {/* Expandable Info Panel */}
+                    {isOpen && (
+                      <div className={`border-t ${colors.border} ${colors.bg} p-4 space-y-4`}>
+                        {/* What it includes */}
+                        <div>
+                          <p className={`text-xs font-bold uppercase tracking-wider ${colors.text} mb-2`}>What This Report Includes</p>
+                          <ul className="space-y-1">
+                            {info.includes.map((item, i) => (
+                              <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                                <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${colors.icon.replace('text-', 'bg-')}`} />
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Calculation */}
+                        <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                          <p className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-1">How It's Calculated</p>
+                          <p className="text-sm text-amber-800">{info.calculation}</p>
+                        </div>
+
+                        {/* Key fields */}
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Key Fields</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {info.keyFields.map((f, i) => (
+                              <span key={i} className="text-xs bg-white border border-gray-200 text-gray-700 px-2 py-0.5 rounded-full">{f}</span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Filing use */}
+                        <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+                          <p className="text-xs font-bold uppercase tracking-wider text-green-700 mb-1">📋 Purpose & Filing Use</p>
+                          <p className="text-sm text-green-800">{info.use}</p>
+                        </div>
+
+                        {/* View report link */}
+                        <a
+                          href="/report"
+                          target="_blank"
+                          rel="noreferrer"
+                          className={`inline-flex items-center gap-2 text-sm font-semibold ${colors.text} hover:underline`}
+                        >
+                          <FileText size={14} /> Open Full Report →
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
     </DashboardLayout>
   );

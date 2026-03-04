@@ -1236,97 +1236,107 @@ def check_in_booking(
     # Process Amenity Allocation (Stock Issue)
     if amenityAllocation:
         try:
-            import json
-            amenity_data = json.loads(amenityAllocation)
-            
-            # If items exist
-            if amenity_data and "items" in amenity_data and len(amenity_data["items"]) > 0:
-                # We need to issue stock to the room(s)
+            # Use a savepoint to ensure amenity errors don't crash the whole check-in
+            with db.begin_nested():
+                import json
+                amenity_data = json.loads(amenityAllocation)
                 
-                for br in booking.booking_rooms:
-                    room = br.room
-                    if not room or not room.inventory_location_id:
-                        continue # Skip if no inventory location
+                # If items exist
+                if amenity_data and "items" in amenity_data and len(amenity_data["items"]) > 0:
+                    # We need to issue stock to the room(s)
+                    
+                    for br in booking.booking_rooms:
+                        room = br.room
+                        if not room or not room.inventory_location_id:
+                            continue # Skip if no inventory location
+                            
+                        # Create Stock Issue Header
+                        from app.models.inventory import StockIssue, StockIssueDetail, LocationStock
                         
-                    # Create Stock Issue Header
-                    from app.models.inventory import StockIssue, StockIssueDetail, LocationStock
-                    
-                    # Find Warehouse (Source) - assuming ID 1 or first warehouse
-                    warehouse = db.query(Location).filter(Location.location_type == "Warehouse").first()
-                    source_id = warehouse.id if warehouse else None
-                    
-                    if not source_id:
-                        print("Warning: No Warehouse found for amenity stock issue.")
-                        continue
+                        # Find Warehouse (Source) - uppercase to match DB ENUM
+                        warehouse = db.query(Location).filter(Location.location_type == "WAREHOUSE").first()
+                        source_id = warehouse.id if warehouse else None
+                        
+                        if not source_id:
+                            print("Warning: No Warehouse found for amenity stock issue.")
+                            continue
 
-                    # Create Issue Record
-                    stock_issue = StockIssue(
-                        source_location_id=source_id,
-                        destination_location_id=room.inventory_location_id,
-                        issue_date=datetime.utcnow(),
-                        status="approved", # Auto-approve system issues
-                        issued_by_id=current_user.id,
-                        reference_number=f"CHK-IN-{booking_id}-{room.number}",
-                        notes=f"Automatic Amenity Issue for Check-in {formatted_booking_id}",
-                        booking_id=booking.id,
-                        guest_id=booking.user_id
-                    )
-                    db.add(stock_issue)
-                    db.flush() # Get ID
-                    
-                    # Process Items
-                    for item in amenity_data["items"]:
-                        item_id = item.get("item_id")
-                        if not item_id: continue
+                        # Create Issue Record
+                        formatted_booking_id = f"BK-{str(booking_id).zfill(6)}"
+                        stock_issue = StockIssue(
+                            source_location_id=source_id,
+                            destination_location_id=room.inventory_location_id,
+                            issue_date=datetime.utcnow(),
+                            status="approved", # Auto-approve system issues
+                            issued_by_id=current_user.id,
+                            reference_number=f"CHK-IN-{booking_id}-{room.number}",
+                            notes=f"Automatic Amenity Issue for Check-in {formatted_booking_id}",
+                            booking_id=booking.id,
+                            guest_id=booking.user_id
+                        )
+                        db.add(stock_issue)
+                        db.flush() # Get ID
                         
-                        # Calculate Total Quantity to Issue
-                        qty_per_night = float(item.get("complimentaryPerNight", 0))
-                        qty_per_stay = float(item.get("complimentaryPerStay", 0))
-                        
-                        # Stay duration
-                        check_in_dt = booking.check_in if isinstance(booking.check_in, date) else datetime.strptime(str(booking.check_in), '%Y-%m-%d').date()
-                        check_out_dt = booking.check_out if isinstance(booking.check_out, date) else datetime.strptime(str(booking.check_out), '%Y-%m-%d').date()
-                        nights = max(1, (check_out_dt - check_in_dt).days)
-                        
-                        total_qty = (qty_per_night * nights) + qty_per_stay
-                        
-                        if total_qty > 0:
-                            # Add Detail
-                            detail = StockIssueDetail(
-                                issue_id=stock_issue.id,
-                                item_id=item_id,
-                                quantity=total_qty,
-                                notes=f"{item.get('frequency')} allocation"
-                            )
-                            db.add(detail)
+                        # Process Items
+                        for item in amenity_data["items"]:
+                            item_id = item.get("item_id")
+                            if not item_id: continue
                             
-                            # Move Stock (Warehouse -> Room)
-                            # 1. Deduct Warehouse
-                            inv_item = db.query(InventoryItem).filter(InventoryItem.id == item_id).first()
-                            if inv_item:
-                                inv_item.current_stock = max(0, (inv_item.current_stock or 0) - total_qty)
-                                
-                            # 2. Add Room Stock
-                            loc_stock = db.query(LocationStock).filter(
-                                LocationStock.location_id == room.inventory_location_id,
-                                LocationStock.item_id == item_id
-                            ).first()
+                            # Calculate Total Quantity to Issue
+                            qty_per_night = float(item.get("complimentaryPerNight", 0))
+                            qty_per_stay = float(item.get("complimentaryPerStay", 0))
                             
-                            if loc_stock:
-                                loc_stock.quantity = (loc_stock.quantity or 0) + total_qty
-                                loc_stock.last_updated = datetime.utcnow()
-                            else:
-                                loc_stock = LocationStock(
-                                    location_id=room.inventory_location_id,
+                            # Stay duration
+                            from datetime import date
+                            check_in_dt = booking.check_in if isinstance(booking.check_in, date) else datetime.strptime(str(booking.check_in), '%Y-%m-%d').date()
+                            check_out_dt = booking.check_out if isinstance(booking.check_out, date) else datetime.strptime(str(booking.check_out), '%Y-%m-%d').date()
+                            nights = max(1, (check_out_dt - check_in_dt).days)
+                            
+                            total_qty = (qty_per_night * nights) + qty_per_stay
+                            
+                            if total_qty > 0:
+                                # Add Detail
+                                detail = StockIssueDetail(
+                                    issue_id=stock_issue.id,
                                     item_id=item_id,
-                                    quantity=total_qty,
-                                    last_updated=datetime.utcnow()
+                                    issued_quantity=total_qty, # Ensure correct column name
+                                    unit=item.get("unit", "pcs"), # Fallback unit
+                                    notes=f"{item.get('frequency')} allocation"
                                 )
-                                db.add(loc_stock)
+                                db.add(detail)
                                 
+                                # Move Stock (Warehouse -> Room)
+                                # 1. Deduct Warehouse
+                                from app.models.inventory import InventoryItem
+                                inv_item = db.query(InventoryItem).filter(InventoryItem.id == item_id).first()
+                                if inv_item:
+                                    inv_item.current_stock = max(0, (inv_item.current_stock or 0) - total_qty)
+                                    
+                                # 2. Add Room Stock
+                                loc_stock = db.query(LocationStock).filter(
+                                    LocationStock.location_id == room.inventory_location_id,
+                                    LocationStock.item_id == item_id
+                                ).first()
+                                
+                                if loc_stock:
+                                    loc_stock.quantity = (loc_stock.quantity or 0) + total_qty
+                                    loc_stock.last_updated = datetime.utcnow()
+                                else:
+                                    loc_stock = LocationStock(
+                                        location_id=room.inventory_location_id,
+                                        item_id=item_id,
+                                        quantity=total_qty,
+                                        last_updated=datetime.utcnow()
+                                    )
+                                    db.add(loc_stock)
         except Exception as e:
             print(f"Error processing amenity allocation: {e}")
-            # Non-blocking error, log and continue check-in
+            import traceback
+            traceback.print_exc()
+            # Non-blocking error, log and continue check-in. 
+            # nested transaction automatically rolls back on exception if used in with block,
+            # but we catch it here to prevent it from propagating up.
+
     
     db.commit()
     db.refresh(booking)

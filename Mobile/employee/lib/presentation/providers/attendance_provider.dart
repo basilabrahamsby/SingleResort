@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import '../../data/services/api_service.dart';
+import 'dart:convert';
 
 class AttendanceProvider extends ChangeNotifier {
   final ApiService _apiService;
@@ -15,16 +17,23 @@ class AttendanceProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   DateTime? get clockInTime => _clockInTime;
   String? get error => _error;
+  int? get activeLogId => _activeLogId;
+  List<String> get completedTasks => _completedTasks;
 
   List<dynamic> _workLogs = [];
   List<dynamic> get workLogs => _workLogs;
   
   bool get isOnDuty => _isClockedIn;
 
+  int? _activeLogId;
+  List<String> _completedTasks = [];
+
   Future<void> checkTodayStatus(int? employeeId) async {
     if (employeeId == null) {
       _isClockedIn = false;
       _clockInTime = null;
+      _activeLogId = null;
+      _completedTasks = [];
       notifyListeners();
       return;
     }
@@ -37,6 +46,7 @@ class AttendanceProvider extends ChangeNotifier {
       print("Checking attendance status for employee: $employeeId");
       final response = await _apiService.getWorkLogs(employeeId);
       print("Work logs response status: ${response.statusCode}");
+      print("Work logs data: ${response.data}");
       
       if (response.statusCode == 200 && response.data is List) {
         final logs = response.data as List;
@@ -64,21 +74,44 @@ class AttendanceProvider extends ChangeNotifier {
              
              print("Found active log: ${activeLog}");
              _isClockedIn = true;
-             _clockInTime = DateTime.parse('${activeLog['date']} ${activeLog['check_in_time']}');
+             _activeLogId = activeLog['id'];
+             
+             if (activeLog['completed_tasks'] != null) {
+               try {
+                 List<dynamic> parsed = jsonDecode(activeLog['completed_tasks']);
+                 _completedTasks = parsed.map((e) => e.toString()).toList();
+               } catch (_) {
+                 _completedTasks = [];
+               }
+             } else {
+               _completedTasks = [];
+             }
+             
+             // Safely parse clock-in time
+             if (activeLog['check_in_time'] != null) {
+               String datePart = activeLog['date'];
+               String timePart = activeLog['check_in_time'];
+               // If timePart is just HH:mm:ss, combine it
+               _clockInTime = DateTime.parse('${datePart} $timePart');
+             } else {
+               _clockInTime = DateTime.now();
+             }
+             
              foundActive = true;
-             print("Status: CLOCKED IN at ${_clockInTime}");
+             print("Status: CLOCKED IN at ${_clockInTime} with Log ID: $_activeLogId");
            } catch (e) {
              // No active log found
-             print("No active clock-in found");
-             if (todayLogs.isNotEmpty) {
-               print("Last log was clocked out");
-             }
+             print("No active clock-in found in today's logs");
+             _activeLogId = null;
+             _completedTasks = [];
            }
         }
         
         if (!foundActive) {
            _isClockedIn = false;
            _clockInTime = null;
+           _activeLogId = null;
+           _completedTasks = [];
            print("Status: CLOCKED OUT");
         }
       }
@@ -91,14 +124,19 @@ class AttendanceProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> clockIn(int employeeId) async {
+  Future<bool> clockIn(int employeeId, {double? latitude, double? longitude, List<String>? tasksToSync}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
     
     try {
-      print("Attempting to clock in for employee: $employeeId");
-      final response = await _apiService.clockIn(employeeId, "Mobile App");
+      print("Attempting to clock in for employee: $employeeId (Lat: $latitude, Lng: $longitude)");
+      final response = await _apiService.clockIn(
+        employeeId, 
+        "Mobile App",
+        latitude: latitude,
+        longitude: longitude,
+      );
       print("Clock-in response status: ${response.statusCode}");
       print("Clock-in response data: ${response.data}");
       
@@ -108,6 +146,16 @@ class AttendanceProvider extends ChangeNotifier {
         print("Clock-in successful!");
         // Refresh status to get latest data
         await checkTodayStatus(employeeId);
+        
+        if (tasksToSync != null && tasksToSync.isNotEmpty && _activeLogId != null) {
+          try {
+             await _apiService.updateWorkLogTasks(_activeLogId!, tasksToSync);
+             checkTodayStatus(employeeId); // quick re-fetch to update completed status internally
+          } catch(e) {
+             print("Failed to sync initial tasks on clock in: $e");
+          }
+        }
+        
         return true;
       } else {
         _error = "Failed to clock in: ${response.statusMessage}";
@@ -116,14 +164,18 @@ class AttendanceProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      // Check if already clocked in
-      if (e.toString().contains("already clocked in")) {
-        _error = "You are already clocked in. Please clock out first.";
-        _isClockedIn = true; // Update status
-        print("Already clocked in");
+      print("Clock-in error: $e");
+      if (e is DioException && e.response != null && e.response?.data != null) {
+        final detail = e.response?.data['detail'];
+        if (detail != null && detail.toString().contains("already clocked in")) {
+          _error = "You are already clocked in. Syncing status...";
+          _isClockedIn = true;
+          await checkTodayStatus(employeeId);
+          return true; // Treat as success since we are clocked in
+        }
+        _error = detail?.toString() ?? e.message;
       } else {
         _error = e.toString();
-        print("Clock-in error: $e");
       }
       return false;
     } finally {

@@ -15,6 +15,7 @@ class Expense(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"))
     image = Column(String, nullable=True)
     department = Column(String, nullable=True)  # Restaurant, Facility, Hotel, Office, Security, Fire & Safety, Housekeeping
+    status = Column(String, default="Pending", nullable=False) # Pending, Approved, Rejected, Paid
     created_at = Column(DateTime, default=get_ist_now)
     
     # RCM (Reverse Charge Mechanism) Fields

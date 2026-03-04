@@ -88,6 +88,19 @@ def migrate_database():
         add_column('inventory_transactions', 'destination_location_id', 'INTEGER REFERENCES locations(id)')
         print()
 
+        # Table: food_orders
+        print("Migrating 'food_orders' table...")
+        add_column('food_orders', 'prepared_by_id', 'INTEGER REFERENCES employees(id)')
+        print()
+
+        # Diagnostic: Print last 5 food orders
+        print("\nChecking last 5 food orders for diagnostics...")
+        orders_sql = text("SELECT id, status, assigned_employee_id, prepared_by_id FROM food_orders ORDER BY id DESC LIMIT 5")
+        orders = db.execute(orders_sql).fetchall()
+        for o in orders:
+            print(f"Order ID: {o[0]}, Status: {o[1]}, AssignedTo: {o[2]}, PreparedBy: {o[3]}")
+        print()
+
         print("=" * 60)
         print("✅ Database migration completed successfully!")
         print("=" * 60)

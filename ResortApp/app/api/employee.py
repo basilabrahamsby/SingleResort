@@ -38,6 +38,7 @@ def add_employee(
     phone: str = Form(None),
     password: str = Form(...),
     image: UploadFile = File(None),
+    daily_tasks: str = Form(None),
     current_user: User = Depends(get_current_user),
 ):
     image_url = None
@@ -82,12 +83,13 @@ def add_employee(
         join_date=parsed_join_date,
         image_url=image_url,
         user_id=new_user.id,
+        daily_tasks=daily_tasks,
     )
 
 def _list_employees_impl(db: Session, current_user: User, skip: int = 0, limit: int = 20):
     """Helper function for list_employees with status calculation"""
-    if limit > 50:
-        limit = 50
+    if limit > 1000:
+        limit = 1000
     if limit < 1:
         limit = 20
         
@@ -148,7 +150,10 @@ def _list_employees_impl(db: Session, current_user: User, skip: int = 0, limit: 
             "join_date": str(emp.join_date) if emp.join_date else None,
             "image_url": emp.image_url,
             "user_id": emp.user_id,
+            "daily_tasks": emp.daily_tasks,
             "status": status,
+            "current_status": status.replace("_", " ").title(),
+            "is_clocked_in": status == "on_duty",
             "user": user_dict
         }
         result.append(emp_dict)
@@ -277,6 +282,36 @@ def get_myself(db: Session = Depends(get_db), current_user: User = Depends(get_c
     raise HTTPException(status_code=404, detail="No linked employee profile")
 
 
+@router.get("/{employee_id}")
+def get_employee(employee_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Get employee details by ID"""
+    employee = db.query(EmployeeModel).options(joinedload(EmployeeModel.user)).filter(EmployeeModel.id == employee_id).first()
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+        
+    user_dict = None
+    if employee.user:
+        user_dict = {
+            "id": employee.user.id,
+            "email": employee.user.email,
+            "name": employee.user.name,
+            "phone": employee.user.phone,
+            "is_active": employee.user.is_active,
+        }
+
+    return {
+        "id": employee.id,
+        "name": employee.name,
+        "role": employee.role,
+        "salary": employee.salary,
+        "join_date": str(employee.join_date) if employee.join_date else None,
+        "image_url": employee.image_url,
+        "user_id": employee.user_id,
+        "daily_tasks": employee.daily_tasks,
+        "user": user_dict
+    }
+
+
 @router.put("/{employee_id}")
 def update_employee(
     employee_id: int,
@@ -288,6 +323,7 @@ def update_employee(
     email: str = Form(None),
     phone: str = Form(None),
     image: UploadFile = File(None),
+    daily_tasks: str = Form(None),
     current_user: User = Depends(get_current_user),
 ):
     employee = db.query(EmployeeModel).options(joinedload(EmployeeModel.user)).filter(EmployeeModel.id == employee_id).first()
@@ -306,6 +342,7 @@ def update_employee(
         if employee.user: employee.user.role_id = role_obj.id
 
     if salary is not None: employee.salary = salary
+    if daily_tasks is not None: employee.daily_tasks = daily_tasks
     
     if join_date:
         try:
@@ -342,6 +379,7 @@ def update_employee(
         "join_date": str(employee.join_date) if employee.join_date else None,
         "image_url": employee.image_url,
         "user_id": employee.user_id,
+        "daily_tasks": employee.daily_tasks,
         "paid_leave_balance": employee.paid_leave_balance,
         "sick_leave_balance": employee.sick_leave_balance,
         "long_leave_balance": employee.long_leave_balance,
@@ -377,6 +415,7 @@ def get_employee(employee_id: int, db: Session = Depends(get_db), current_user: 
         "join_date": str(employee.join_date) if employee.join_date else None,
         "image_url": employee.image_url,
         "user_id": employee.user_id,
+        "daily_tasks": employee.daily_tasks,
         "paid_leave_balance": employee.paid_leave_balance,
         "sick_leave_balance": employee.sick_leave_balance,
         "long_leave_balance": employee.long_leave_balance,

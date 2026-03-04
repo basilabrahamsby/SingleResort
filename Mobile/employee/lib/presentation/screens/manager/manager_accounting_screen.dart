@@ -15,42 +15,39 @@ class _ManagerAccountingScreenState extends State<ManagerAccountingScreen> with 
   late TabController _tabController;
   Map<String, dynamic> _accountData = {};
   bool _isLoading = true;
+  String _searchQuery = "";
+  String _selectedType = "All";
 
   @override
   void initState() {
     super.initState();
-    // Added 2 new tabs: Comprehensive and GST
     _tabController = TabController(length: 6, vsync: this);
     _loadAccountData();
   }
 
   Future<void> _loadAccountData() async {
     final api = context.read<ApiService>();
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    
     try {
-      // Fetch all required data in parallel
       final results = await Future.wait([
-        api.dio.get('/accounts/ledgers?limit=1000'),          // 0: Ledgers
-        api.dio.get('/accounts/journal-entries?limit=100'),    // 1: Journal Entries
-        api.dio.get('/accounts/trial-balance?automatic=true'), // 2: Trial Balance
-        api.dio.get('/accounts/auto-report'),                  // 3: Auto Report (P&L)
-        api.dio.get('/accounts/comprehensive-report?limit=100'), // 4: Comprehensive
-        api.dio.get('/gst-reports/b2b-sales'),                 // 5: GST B2B
-        api.dio.get('/gst-reports/b2c-sales'),                 // 6: GST B2C
-        api.dio.get('/gst-reports/hsn-sac-summary'),           // 7: GST HSN
+        api.dio.get('/accounts/ledgers?limit=1000'),
+        api.dio.get('/accounts/journal-entries?limit=100'),
+        api.dio.get('/accounts/trial-balance?automatic=true'),
+        api.dio.get('/accounts/auto-report'),
+        api.dio.get('/accounts/comprehensive-report?limit=100'),
+        api.dio.get('/gst-reports/b2b-sales'),
+        api.dio.get('/gst-reports/b2c-sales'),
+        api.dio.get('/gst-reports/hsn-sac-summary'),
       ]);
       
       if (mounted) {
         setState(() {
-          // Chart of Accounts
           _accountData['chart_of_accounts'] = (results[0].data as List?) ?? [];
-          
-          // Journal Entries
           _accountData['journal_entries'] = (results[1].data as List?) ?? [];
-          
-          // Trial Balance
           _accountData['trial_balance'] = results[2].data ?? {};
           
-          // Profit & Loss (from Auto Report)
           final autoReport = results[3].data ?? {};
           _accountData['profit_loss'] = {
              'total_revenue': autoReport['summary']?['total_revenue'] ?? 0,
@@ -59,10 +56,7 @@ class _ManagerAccountingScreenState extends State<ManagerAccountingScreen> with 
              'expense_breakdown': _mapExpenseBreakdown(autoReport['expenses']),
           };
 
-          // Comprehensive Report
           _accountData['comprehensive'] = results[4].data ?? {};
-
-          // GST Reports
           _accountData['gst_b2b'] = results[5].data ?? {};
           _accountData['gst_b2c'] = results[6].data ?? {};
           _accountData['gst_hsn'] = results[7].data ?? {};
@@ -72,8 +66,7 @@ class _ManagerAccountingScreenState extends State<ManagerAccountingScreen> with 
       }
     } catch (e) {
       if (mounted) {
-         // Try to load partial data if some fail
-         print("Partial accounting load error: $e");
+         print("Accounting load error: $e");
          setState(() => _isLoading = false);
       }
     }
@@ -93,83 +86,308 @@ class _ManagerAccountingScreenState extends State<ManagerAccountingScreen> with 
     List<Map<String, dynamic>> list = [];
     if (data['operating_expenses'] != null) list.add({'category': 'Operating Expenses', 'amount': data['operating_expenses']['total_amount']});
     if (data['inventory_purchases'] != null) list.add({'category': 'Purchases', 'amount': data['inventory_purchases']['total_amount']});
-    // Inventory consumption is implicitly included in purchases for cash accounting usually, 
-    // or separate for accrual. Using total expenses from summary is safer for the big number.
     return list;
   }
 
   @override
   Widget build(BuildContext context) {
+    final currencyFormat = NumberFormat.currency(symbol: "₹", decimalDigits: 0);
+
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text("Accounting & Finance"),
+        title: const Text("Accounting & Finance", style: TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
+          labelColor: Colors.indigo[900],
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: Colors.indigo[900],
           tabs: const [
             Tab(text: "Chart of Accounts"),
+            Tab(text: "P&L Statement"),
             Tab(text: "Journal Entries"),
             Tab(text: "Trial Balance"),
-            Tab(text: "P&L Statement"),
             Tab(text: "Comprehensive"),
             Tab(text: "GST Reports"),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadAccountData,
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: _isLoading
           ? const ListSkeleton()
           : TabBarView(
               controller: _tabController,
               children: [
-                _buildChartOfAccounts(),
-                _buildJournalEntries(),
-                _buildTrialBalance(),
-                _buildProfitLoss(),
-                _buildComprehensiveReport(),
-                _buildGstReports(),
+                _buildChartOfAccounts(currencyFormat),
+                _buildProfitLoss(currencyFormat),
+                _buildJournalEntries(currencyFormat),
+                _buildTrialBalance(currencyFormat),
+                _buildComprehensiveReport(currencyFormat),
+                _buildGstReports(currencyFormat),
               ],
             ),
     );
   }
 
-  Widget _buildChartOfAccounts() {
-    final accounts = _accountData['chart_of_accounts'] as List? ?? [];
-    if (accounts.isEmpty) return const Center(child: Text("No accounts found"));
-    
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: accounts.length,
-      itemBuilder: (context, index) {
-        final acc = accounts[index];
-        // Note: Ledger endpoint might not return 'balance'. If it's 0, it is what it is.
-        final balance = num.tryParse(acc['current_balance']?.toString() ?? "0") ?? 0;
-        
-        return Card(
-          child: ExpansionTile(
-            leading: Icon(_getAccountIcon(acc['type'] ?? acc['group_name']), color: Colors.indigo),
-            title: Text(acc['name'] ?? "Account"),
-            subtitle: Text("${acc['code'] ?? ''} • ${acc['type'] ?? acc['group_name'] ?? 'Ledger'}"),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("Balance: ${NumberFormat.currency(symbol: "₹").format(balance)}",
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text("Description: ${acc['description'] ?? 'N/A'}"),
-                  ],
+  Widget _buildChartOfAccounts(NumberFormat format) {
+    final accounts = (_accountData['chart_of_accounts'] as List? ?? []).where((acc) {
+      final matchesSearch = (acc['name'] ?? "").toString().toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                            (acc['code'] ?? "").toString().toLowerCase().contains(_searchQuery.toLowerCase());
+      final matchesType = _selectedType == "All" || (acc['type'] ?? acc['group_name'] ?? "").toString() == _selectedType;
+      return matchesSearch && matchesType;
+    }).toList();
+
+    // Summary calculations
+    double totalAssets = 0;
+    double totalLiabilities = 0;
+    for (var acc in _accountData['chart_of_accounts'] as List? ?? []) {
+      final balance = double.tryParse(acc['current_balance']?.toString() ?? "0") ?? 0;
+      final type = (acc['type'] ?? acc['group_name'] ?? "").toString().toLowerCase();
+      if (type == "asset") totalAssets += balance;
+      if (type == "liability") totalLiabilities += balance;
+    }
+
+    return Column(
+      children: [
+        _buildSearchAndFilterHeader(),
+        _buildQuickMetrics(totalAssets, totalLiabilities, format),
+        Expanded(
+          child: accounts.isEmpty 
+              ? const Center(child: Text("No accounts found"))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: accounts.length,
+                  itemBuilder: (context, index) {
+                    final acc = accounts[index];
+                    final balance = double.tryParse(acc['current_balance']?.toString() ?? "0") ?? 0;
+                    return _buildAccountCard(acc, balance, format);
+                  },
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+        ),
+      ],
     );
   }
 
-  Widget _buildJournalEntries() {
+  Widget _buildSearchAndFilterHeader() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: Colors.white,
+      child: Column(
+        children: [
+          TextField(
+            onChanged: (val) => setState(() => _searchQuery = val),
+            decoration: InputDecoration(
+              hintText: "Search account name or code...",
+              prefixIcon: const Icon(Icons.search),
+              filled: true,
+              fillColor: Colors.grey[100],
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              contentPadding: const EdgeInsets.symmetric(vertical: 0),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                "All", "Asset", "Liability", "Equity", "Revenue", "Expense"
+              ].map((type) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(type),
+                  selected: _selectedType == type,
+                  onSelected: (val) => setState(() => _selectedType = type),
+                  selectedColor: Colors.indigo[900],
+                  labelStyle: TextStyle(color: _selectedType == type ? Colors.white : Colors.black),
+                ),
+              )).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickMetrics(double assets, double liabilities, NumberFormat format) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildMetricCard("Net Worth", assets - liabilities, Colors.indigo[900]!, Icons.account_balance, format),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildMetricCard("Total Assets", assets, Colors.green[700]!, Icons.account_balance_wallet, format),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricCard(String title, double amount, Color color, IconData icon, NumberFormat format) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 8),
+          Text(title, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+          Text(format.format(amount), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 18)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountCard(Map<String, dynamic> acc, double balance, NumberFormat format) {
+    final type = (acc['type'] ?? acc['group_name'] ?? "N/A").toString();
+    final color = _getAccountColor(type);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey[200]!)),
+      child: ExpansionTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+          child: Icon(_getAccountIcon(type), color: color),
+        ),
+        title: Text(acc['name'] ?? "Account", style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text("${acc['code'] ?? ''} • $type", style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        trailing: Text(format.format(balance), style: TextStyle(fontWeight: FontWeight.bold, color: balance < 0 ? Colors.red : Colors.green[700])),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoRow("Account Code", acc['code'] ?? "N/A"),
+                _buildInfoRow("Group", acc['group_name'] ?? "N/A"),
+                _buildInfoRow("Type", type),
+                _buildInfoRow("Description", acc['description'] ?? "No description available"),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {}, // View Ledger Button logic
+                    icon: const Icon(Icons.list_alt),
+                    label: const Text("View Full Ledger"),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfitLoss(NumberFormat format) {
+    final pnl = _accountData['profit_loss'] as Map? ?? {};
+    final revenue = (pnl['total_revenue'] as num?)?.toDouble() ?? 0.0;
+    final expenses = (pnl['total_expenses'] as num?)?.toDouble() ?? 0.0;
+    final profit = revenue - expenses;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: profit >= 0 ? [Colors.green[700]!, Colors.green[900]!] : [Colors.red[700]!, Colors.red[900]!],
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              children: [
+                const Text("Net Profit/Loss", style: TextStyle(color: Colors.white70)),
+                const SizedBox(height: 8),
+                Text(format.format(profit), style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildPnLSmallStat("Gross Revenue", revenue, Colors.white, format),
+                    _buildPnLSmallStat("Total Expenses", expenses, Colors.white, format),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          _buildPremiumPnLSection("Revenue Breakdown", pnl['revenue_breakdown'] as List? ?? [], Colors.green, Icons.trending_up, format),
+          const SizedBox(height: 16),
+          _buildPremiumPnLSection("Expense Categories", pnl['expense_breakdown'] as List? ?? [], Colors.red, Icons.trending_down, format),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPnLSmallStat(String label, double value, Color color, NumberFormat format) {
+    return Column(
+      children: [
+        Text(label, style: TextStyle(color: color.withOpacity(0.7), fontSize: 12)),
+        Text(format.format(value), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
+      ],
+    );
+  }
+
+  Widget _buildPremiumPnLSection(String title, List items, Color color, IconData icon, NumberFormat format) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey[200]!)),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(icon, color: color),
+            title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          const Divider(height: 1),
+          if (items.isEmpty) 
+            const Padding(padding: EdgeInsets.all(16), child: Text("No data available"))
+          else
+            ...items.map((item) => ListTile(
+              title: Text(item['category'] ?? "Category"),
+              trailing: Text(format.format(item['amount'] ?? 0), style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+            )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJournalEntries(NumberFormat format) {
     final entries = _accountData['journal_entries'] as List? ?? [];
     if (entries.isEmpty) return const Center(child: Text("No journal entries found"));
 
@@ -178,23 +396,23 @@ class _ManagerAccountingScreenState extends State<ManagerAccountingScreen> with 
       itemCount: entries.length,
       itemBuilder: (context, index) {
         final entry = entries[index];
-        final amount = entry['lines'] != null && (entry['lines'] as List).isNotEmpty 
-            ? (entry['lines'] as List).fold(0.0, (sum, line) => sum + (line['debit_ledger_id'] != null ? (double.tryParse(line['amount'].toString()) ?? 0) : 0))
-            : 0.0; // Estimate total debit amount
+        final totalDebit = entry['lines'] != null 
+            ? (entry['lines'] as List).where((l) => l['debit_ledger_id'] != null).fold(0.0, (s, l) => s + (double.tryParse(l['amount'].toString()) ?? 0))
+            : 0.0;
             
         return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ListTile(
-            leading: const Icon(Icons.receipt_long, color: Colors.blue),
-            title: Text(entry['entry_number'] ?? "JE-${entry['id']}"),
-            subtitle: Text(entry['description'] ?? "Journal Entry"),
+            leading: CircleAvatar(backgroundColor: Colors.blue[50], child: const Icon(Icons.receipt_long, color: Colors.blue)),
+            title: Text(entry['entry_number'] ?? "JE-${entry['id']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(entry['description'] ?? "No description"),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(NumberFormat.currency(symbol: "₹").format(amount),
-                    style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text(DateFormat('dd MMM').format(DateTime.parse(entry['entry_date'])),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                Text(format.format(totalDebit), style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(DateFormat('dd MMM').format(DateTime.parse(entry['entry_date'])), style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ],
             ),
           ),
@@ -203,245 +421,138 @@ class _ManagerAccountingScreenState extends State<ManagerAccountingScreen> with 
     );
   }
 
-  Widget _buildTrialBalance() {
+  Widget _buildTrialBalance(NumberFormat format) {
     final trial = _accountData['trial_balance'] as Map? ?? {};
-    final totalDebit = num.tryParse(trial['total_debit']?.toString() ?? "0") ?? 0;
-    final totalCredit = num.tryParse(trial['total_credit']?.toString() ?? "0") ?? 0;
+    final totalDebit = double.tryParse(trial['total_debit']?.toString() ?? "0") ?? 0;
+    final totalCredit = double.tryParse(trial['total_credit']?.toString() ?? "0") ?? 0;
     final accounts = trial['accounts'] as List? ?? [];
 
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(16),
-          color: Colors.indigo[50],
+          padding: const EdgeInsets.all(20),
+          color: Colors.white,
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Column(
-                children: [
-                  const Text("Total Debit", style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  Text(NumberFormat.currency(symbol: "₹").format(totalDebit),
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red)),
-                ],
-              ),
-              Column(
-                children: [
-                  const Text("Total Credit", style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  Text(NumberFormat.currency(symbol: "₹").format(totalCredit),
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
-                ],
-              ),
+              Expanded(child: _buildTrialMetric("Total Debit", totalDebit, Colors.red, format)),
+              const SizedBox(width: 12),
+              Expanded(child: _buildTrialMetric("Total Credit", totalCredit, Colors.green, format)),
             ],
           ),
         ),
         Expanded(
-          child: accounts.isEmpty 
-              ? const Center(child: Text("No data"))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: accounts.length,
-                  itemBuilder: (context, index) {
-                    final acc = accounts[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text(acc['name'] ?? "Account"),
-                        subtitle: Text(acc['code'] ?? ""),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text("Dr: ${NumberFormat.compact().format(acc['debit'] ?? 0)}",
-                                    style: const TextStyle(fontSize: 11, color: Colors.red)),
-                                Text("Cr: ${NumberFormat.compact().format(acc['credit'] ?? 0)}",
-                                    style: const TextStyle(fontSize: 11, color: Colors.green)),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: accounts.length,
+            itemBuilder: (context, index) {
+              final acc = accounts[index];
+              return Card(
+                child: ListTile(
+                  title: Text(acc['name'] ?? "Account"),
+                  subtitle: Text(acc['code'] ?? "N/A"),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildBalanceColumn("Dr", acc['debit'], Colors.red, format),
+                      const SizedBox(width: 16),
+                      _buildBalanceColumn("Cr", acc['credit'], Colors.green, format),
+                    ],
+                  ),
                 ),
+              );
+            },
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildProfitLoss() {
-    final pnl = _accountData['profit_loss'] as Map? ?? {};
-    final revenue = num.tryParse(pnl['total_revenue']?.toString() ?? "0") ?? 0;
-    final expenses = num.tryParse(pnl['total_expenses']?.toString() ?? "0") ?? 0;
-    final profit = revenue - expenses;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Card(
-            color: profit >= 0 ? Colors.green[50] : Colors.red[50],
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  const Text("Net Profit/Loss", style: TextStyle(fontSize: 14, color: Colors.grey)),
-                  const SizedBox(height: 8),
-                  Text(
-                    NumberFormat.currency(symbol: "₹").format(profit),
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: profit >= 0 ? Colors.green[800] : Colors.red[800],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildPnLSection("Revenue", pnl['revenue_breakdown'] as List? ?? [], Colors.green),
-          const SizedBox(height: 16),
-          _buildPnLSection("Expenses", pnl['expense_breakdown'] as List? ?? [], Colors.red),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPnLSection(String title, List items, Color color) {
-    if (items.isEmpty) return const SizedBox.shrink();
-    return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            color: color.withOpacity(0.1),
-            child: Row(
-              children: [
-                Icon(title == "Revenue" ? Icons.trending_up : Icons.trending_down, color: color),
-                const SizedBox(width: 8),
-                Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-              ],
-            ),
-          ),
-          ...items.map((item) => ListTile(
-                title: Text(item['category'] ?? "Item"),
-                trailing: Text(
-                  NumberFormat.currency(symbol: "₹").format(item['amount'] ?? 0),
-                  style: TextStyle(fontWeight: FontWeight.bold, color: color),
-                ),
-              )),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildComprehensiveReport() {
-    final data = _accountData['comprehensive']?['data'] as Map? ?? {};
-    final summary = _accountData['comprehensive']?['summary'] as Map? ?? {};
-    
-    if (data.isEmpty && summary.isEmpty) return const Center(child: Text("No data found"));
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
+  Widget _buildTrialMetric(String label, double value, Color color, NumberFormat format) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildCompSummaryCard("Checkouts", summary['total_checkouts'], (data['checkouts'] as List?)?.length),
-        _buildCompListSection("Checkouts", data['checkouts'] as List?, (item) => 
-            "${item['room_number']} - ${item['guest_name']} (${NumberFormat.currency(symbol: '₹').format(item['grand_total'] ?? 0)})"),
-        
-        _buildCompSummaryCard("Bookings", summary['total_bookings'], (data['bookings'] as List?)?.length),
-        _buildCompListSection("Bookings", data['bookings'] as List?, (item) => 
-            "${item['guest_name']} - ${item['status']}"),
-            
-        _buildCompSummaryCard("Food Orders", summary['total_food_orders'], (data['food_orders'] as List?)?.length),
-        _buildCompListSection("Food Orders", data['food_orders'] as List?, (item) => 
-            "Room ${item['room_number']} - ₹${item['amount']}"),
-            
-        _buildCompSummaryCard("Expenses", summary['total_expenses'], (data['expenses'] as List?)?.length),
-        _buildCompListSection("Expenses", data['expenses'] as List?, (item) => 
-            "${item['category']}: ${item['description']} (₹${item['amount']})"),
-            
-        _buildCompSummaryCard("Inventory Purchases", summary['total_purchases'], (data['purchases'] as List?)?.length),
-        _buildCompListSection("Inventory Purchases", data['purchases'] as List?, (item) => 
-            "${item['vendor_name']} - ${item['status']} (₹${item['total_amount']})"),
+        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        Text(format.format(value), style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
       ],
     );
   }
-  
-  Widget _buildCompSummaryCard(String title, dynamic total, dynamic loaded) {
+
+  Widget _buildBalanceColumn(String label, dynamic value, Color color, NumberFormat format) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        Text(format.format(value ?? 0), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
+      ],
+    );
+  }
+
+  Widget _buildComprehensiveReport(NumberFormat format) {
+    final data = _accountData['comprehensive']?['data'] as Map? ?? {};
+    final summary = _accountData['comprehensive']?['summary'] as Map? ?? {};
+    
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildPremiumCompSection("Checkouts", summary['total_checkouts'], data['checkouts'] as List?, (item) => format.format(item['grand_total'] ?? 0), format),
+        _buildPremiumCompSection("Expenses", summary['total_expenses'], data['expenses'] as List?, (item) => format.format(item['amount'] ?? 0), format),
+        _buildPremiumCompSection("Purchases", summary['total_purchases'], data['purchases'] as List?, (item) => format.format(item['total_amount'] ?? 0), format),
+      ],
+    );
+  }
+
+  Widget _buildPremiumCompSection(String title, dynamic totalValue, List? items, String Function(dynamic) valFormatter, NumberFormat format) {
     return Card(
-      color: Colors.blue[50],
-      child: ListTile(
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ExpansionTile(
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        trailing: Text("Total: $total${loaded != null && loaded < (total ?? 0) ? ' (Showing $loaded)' : ''}"),
+        subtitle: Text("Total Value: ${format.format(totalValue ?? 0)}"),
+        children: (items ?? []).map((item) => ListTile(
+          title: Text(item['description'] ?? item['guest_name'] ?? item['vendor_name'] ?? "Item"),
+          trailing: Text(valFormatter(item), style: const TextStyle(fontWeight: FontWeight.bold)),
+        )).toList(),
       ),
     );
   }
-  
-  Widget _buildCompListSection(String title, List? items, String Function(dynamic) formatter) {
-     if (items == null || items.isEmpty) return const SizedBox.shrink();
-     
-     return ExpansionTile(
-       title: Text("View $title List"),
-       children: items.take(10).map((item) => ListTile(
-         title: Text(formatter(item), style: const TextStyle(fontSize: 13)),
-       )).toList() + (items.length > 10 ? [const ListTile(title: Text("... and more"))] : []),
-     );
-  }
 
-  Widget _buildGstReports() {
+  Widget _buildGstReports(NumberFormat format) {
     final b2b = _accountData['gst_b2b'] as Map? ?? {};
     final b2c = _accountData['gst_b2c'] as Map? ?? {};
     final hsn = _accountData['gst_hsn'] as Map? ?? {};
     
-    return SingleChildScrollView(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("GSTR-1 Summary", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          
-          _buildGstCard("B2B Sales", b2b, [
-            "Total Invoices: ${b2b['total_invoices'] ?? 0}",
-            "Taxable Value: ${NumberFormat.currency(symbol: '₹').format(b2b['total_taxable_value'] ?? 0)}",
-            "Total IGST: ${NumberFormat.currency(symbol: '₹').format(b2b['total_igst'] ?? 0)}",
-            "Total CGST: ${NumberFormat.currency(symbol: '₹').format(b2b['total_cgst'] ?? 0)}",
-            "Total SGST: ${NumberFormat.currency(symbol: '₹').format(b2b['total_sgst'] ?? 0)}",
-          ]),
-          
-          const SizedBox(height: 16),
-          _buildGstCard("B2C Sales", b2c['summary'] ?? {}, [
-            "B2C Large Taxable: ${NumberFormat.currency(symbol: '₹').format(b2c['summary']?['total_b2c_large_taxable'] ?? 0)}",
-            "B2C Small Taxable: ${NumberFormat.currency(symbol: '₹').format(b2c['summary']?['total_b2c_small_taxable'] ?? 0)}",
-            "Total IGST: ${NumberFormat.currency(symbol: '₹').format((b2c['summary']?['total_b2c_large_igst'] ?? 0) + (b2c['summary']?['total_b2c_small_igst'] ?? 0))}",
-          ]),
-
-          const SizedBox(height: 16),
-          _buildGstCard("HSN/SAC Summary", hsn, [
-            "Total Records: ${hsn['data']?.length ?? 0}",
-            "Total Taxable: ${NumberFormat.currency(symbol: '₹').format(hsn['total_taxable_value'] ?? 0)}",
-            "Total Tax: ${NumberFormat.currency(symbol: '₹').format(hsn['total_tax_amount'] ?? 0)}",
-          ]),
-        ],
-      ),
+      children: [
+        _buildGstPremiumCard("B2B Sales Summary", b2b, format),
+        _buildGstPremiumCard("B2C Sales Summary", b2c['summary'] ?? {}, format),
+        _buildGstPremiumCard("HSN/SAC Summary", hsn, format),
+      ],
     );
   }
-  
-  Widget _buildGstCard(String title, Map data, List<String> details) {
+
+  Widget _buildGstPremiumCard(String title, Map data, NumberFormat format) {
     return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: Colors.grey[200]!)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.indigo)),
-            const Divider(),
-            ...details.map((d) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(d),
+            Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo)),
+            const Divider(height: 24),
+            ...data.entries.where((e) => e.value is num).map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(e.key.replaceAll('_', ' ').toUpperCase(), style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                  Text(e.value is int ? e.value.toString() : format.format(e.value), style: const TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
             )),
           ],
         ),
@@ -449,20 +560,25 @@ class _ManagerAccountingScreenState extends State<ManagerAccountingScreen> with 
     );
   }
 
-  IconData _getAccountIcon(String? type) {
-    switch (type?.toLowerCase()) {
-      case 'asset':
-        return Icons.account_balance_wallet;
-      case 'liability':
-        return Icons.credit_card;
-      case 'equity':
-        return Icons.pie_chart;
-      case 'revenue':
-        return Icons.trending_up;
-      case 'expense':
-        return Icons.trending_down;
-      default:
-        return Icons.account_balance;
+  IconData _getAccountIcon(String type) {
+    switch (type.toLowerCase()) {
+      case 'asset': return Icons.account_balance_wallet;
+      case 'liability': return Icons.credit_card;
+      case 'equity': return Icons.pie_chart;
+      case 'revenue': return Icons.trending_up;
+      case 'expense': return Icons.trending_down;
+      default: return Icons.account_balance;
+    }
+  }
+
+  Color _getAccountColor(String type) {
+    switch (type.toLowerCase()) {
+      case 'asset': return Colors.green;
+      case 'liability': return Colors.red;
+      case 'equity': return Colors.blue;
+      case 'revenue': return Colors.indigo;
+      case 'expense': return Colors.orange;
+      default: return Colors.grey;
     }
   }
 }

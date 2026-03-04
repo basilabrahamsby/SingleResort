@@ -32,6 +32,8 @@ class ServiceRequestOut(BaseModel):
     completed_at: Optional[datetime] = None
     image_path: Optional[str] = None
     food_order_amount: Optional[float] = None
+    food_order_gst: Optional[float] = None
+    food_order_total: Optional[float] = None
     food_order_status: Optional[str] = None
     room_number: Optional[str] = None
     employee_name: Optional[str] = None

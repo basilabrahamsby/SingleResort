@@ -18,6 +18,7 @@ def create_expense(db: Session, data, image_path: str = None):
         employee_id=expense_data.employee_id,
         image=image_path,
         department=getattr(expense_data, 'department', None),
+        status=getattr(expense_data, 'status', 'Pending'),
         # RCM fields
         rcm_applicable=getattr(expense_data, 'rcm_applicable', False),
         rcm_tax_rate=getattr(expense_data, 'rcm_tax_rate', None),

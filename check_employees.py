@@ -1,12 +1,19 @@
-from sqlalchemy import create_engine, text
+
+import sys
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+sys.path.append(os.path.abspath('ResortApp'))
 
-with engine.connect() as conn:
-    result = conn.execute(text("SELECT id, name, image_url FROM employees"))
-    for row in result:
-        print(f"ID: {row[0]}, Name: {row[1]}, Image: {row[2]}")
+from app.database import SessionLocal
+from app.models.employee import Employee
+
+def check_employees():
+    db = SessionLocal()
+    employees = db.query(Employee).all()
+    print(f"Total employees: {len(employees)}")
+    for emp in employees:
+        print(f" - ID: {emp.id}, Name: {emp.name}, Role: {emp.role}")
+    db.close()
+
+if __name__ == "__main__":
+    check_employees()

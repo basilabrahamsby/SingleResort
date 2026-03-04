@@ -12,6 +12,7 @@ import 'package:orchid_employee/presentation/screens/waiter/waiter_dashboard.dar
 import 'package:orchid_employee/presentation/screens/waiter/menu_order_screen.dart';
 import 'package:orchid_employee/presentation/screens/common/work_report_screen.dart';
 import 'package:orchid_employee/presentation/screens/manager/manager_inventory_screen.dart';
+import 'package:orchid_employee/presentation/screens/employee/employee_daily_tasks_screen.dart';
 import 'package:orchid_employee/presentation/screens/manager/manager_staff_screen.dart';
 import 'package:orchid_employee/presentation/screens/manager/financial_reports_screen.dart';
 import 'package:orchid_employee/presentation/screens/manager/booking_analysis_screen.dart';
@@ -312,6 +313,17 @@ class AppDrawer extends StatelessWidget {
 
                 // Common Menu Items
                 const Divider(),
+                _DrawerItem(
+                  icon: Icons.checklist,
+                  title: "My Daily Tasks",
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const EmployeeDailyTasksScreen()),
+                    );
+                  },
+                ),
                 _DrawerItem(
                   icon: Icons.access_time,
                   title: "Attendance & Salary",

@@ -3,14 +3,178 @@ import DashboardLayout from "../layout/DashboardLayout";
 import API from "../services/api";
 import api from "../services/api";
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from "recharts";
-import { DollarSign, Users, Calendar, BedDouble, Briefcase, Package, Utensils, ConciergeBell, CheckCircle, ShoppingCart, TrendingUp, BookOpen, FileText, Calculator, Plus, Edit, Trash2, CheckCircle as CheckCircleIcon, XCircle, Boxes, Building2, Store, ShoppingBag, Tag, TrendingDown, ArrowUpDown, History } from "lucide-react";
+import { DollarSign, Users, Calendar, BedDouble, Briefcase, Package, Utensils, ConciergeBell, CheckCircle, ShoppingCart, TrendingUp, BookOpen, FileText, Calculator, Plus, Edit, Trash2, CheckCircle as CheckCircleIcon, XCircle, Boxes, Building2, Store, ShoppingBag, Tag, TrendingDown, ArrowUpDown, History, Info, RefreshCw, Activity, Database, Receipt } from "lucide-react";
 import CountUp from "react-countup";
 import { motion } from "framer-motion";
 import { useInfiniteScroll } from "./useInfiniteScroll";
 import { formatDateIST, formatDateTimeIST, getCurrentDateIST, getCurrentDateTimeIST } from "../utils/dateUtils";
 import DepartmentDetailsModal from "./inventory/modals/DepartmentDetailsModal";
+import { toast } from "react-hot-toast";
 
-// --- Helper Components ---
+const SECTION_INFO = {
+  'chart-of-accounts': {
+    title: 'Chart of Accounts (CoA)',
+    color: 'indigo',
+    description: 'The foundation of your accounting system. A structured list of every account (ledger) your business uses to record transactions.',
+    includes: [
+      'Account Groups (Revenue, Expense, Asset, Liability)',
+      'Individual Ledgers (e.g., Cash, Room Revenue, CGST)',
+      'Opening Balances and Tax Settings',
+    ],
+    calculation: 'Ledger Balances are derived from the JournalEntry table. For Debit-side accounts (Assets/Expenses), Balance = (Debit Sum - Credit Sum). For Credit-side accounts (Revenue/Liability), Balance = (Credit Sum - Debit Sum).',
+    use: 'Organize your finances. Every transaction must be linked to a ledger from this chart.',
+    tip: 'Tip: Use the "Seed Chart of Accounts" button to quickly set up standard hospitality industry accounts.',
+  },
+  'journal-entries': {
+    title: 'Journal Entries (General Ledger)',
+    color: 'emerald',
+    description: 'The "Book of Original Entry" where every financial transaction is recorded manually or automatically.',
+    includes: [
+      'Manual adjustments and corrections',
+      'Automatic entries from Bookings and Checkouts',
+      'Double-entry validation (Debits must equal Credits)',
+    ],
+    calculation: 'The system validates that Sum(DebitLines) === Sum(CreditLines) for every EntryID. Automatic journals are triggered by Checkout (Dr. Guest/Cash, Cr. Revenue), Purchase (Dr. Inventory, Cr. Vendor), and Expense modules.',
+    use: 'Record non-operational transactions or fix errors in automatic postings.',
+    tip: 'The system automatically creates journals for Checkouts, purchases, and expenses.',
+  },
+  'trial-balance': {
+    title: 'Trial Balance',
+    color: 'blue',
+    description: 'A report that lists the balances of all general ledger accounts at a specific point in time.',
+    includes: [
+      'Total Debits and Total Credits per ledger',
+      'Net Balance (Debit or Credit)',
+      'Overall balancing status for the entire system',
+    ],
+    calculation: 'Software scans the JournalLine table, grouping by LedgerID. It calculates the running total of all movements. The Total Trial Balance is "Balanced" only if Sum(All Debit Balances) matches Sum(All Credit Balances).',
+    use: 'Use to verify mathematical accuracy of the bookkeeping before generating Final Accounts (P&L/Balance Sheet).',
+    tip: 'If this is NOT balanced, it means there is a corrupt entry or a system error needing attention.',
+  },
+  'gst-reports': {
+    title: 'GST Compliance Reports',
+    color: 'purple',
+    description: 'Specialized reports designed to help you file GSTR-1 and GSTR-3B returns in India.',
+    includes: [
+      'B2B and B2C Sales summaries',
+      'HSN/SAC wise tax breakdown',
+      'ITC (Input Tax Credit) registers',
+      'Room Tariff slab-wise analysis (Hospitality specific)',
+    ],
+    calculation: 'B2B Sales = Total from Checkouts where Guest.GSTIN is not null. B2C Sales = All other Checkouts. Tax is split into CGST/SGST (9%+9% or 6%+6%) based on the HSN/SAC code assigned to the Service or Room category.',
+    use: 'Export or copy values directly into the GST Portal for monthly/quarterly filing.',
+    tip: 'Ensure all guest GSTINs are correctly entered in bookings for B2B reporting.',
+  },
+  'auto-report': {
+    title: 'Automatic Financial Reports',
+    color: 'orange',
+    description: 'Dynamic reports generated automatically by analyzing every business event (bookings, food, services, expenses). No manual entries required.',
+    includes: [
+      'Automatic Profit & Loss (P&L)',
+      'Department-wise revenue analysis',
+      'Inventory consumption & COGS tracking',
+      'Operating expense summaries',
+    ],
+    calculation: 'Revenue = Sum(Checkout.grand_total) + Sum(Misc_Income). COGS = Sum(PurchaseDetail.unit_price * InventoryConsumption.quantity). Net Profit = Revenue - (COGS + Salaries + Utilities). This bypasses the Ledger system to show raw operational performance.',
+    use: 'Use for a quick, "no-accounting-knowledge" view of how the business is performing today. Refreshes instantly when a guest checks out or a purchase is made.',
+    tip: 'Note: These reports are separate from the formal Accounting ledger reports.',
+  },
+  'comprehensive-report': {
+    title: 'Comprehensive Master Report',
+    color: 'indigo',
+    description: 'The master data extract of the entire resort operation. Aggregates records from every module into a single view.',
+    includes: [
+      'Master list of all Checkouts, Bookings, and Food Orders',
+      'Complete Service history and Employee logs',
+      'Every inventory transaction and purchase master',
+      'Full record history available for export',
+    ],
+    calculation: 'Aggregates counts from: [Bookings, Checkouts, FoodOrders, ServiceAssignments, Expenses, Purchases, Employees, InventoryTransactions]. Financial totals are simple sums of the `amount` field in each respective table, filtered by the date range.',
+    use: 'Use when you need to find a specific transaction or audit all activity within a date range. Great for deep-diving into operational history.',
+    tip: 'Tip: Use the date filters to narrow down the master record list.',
+  },
+};
+
+const SectionInfoPanel = ({ sectionKey, onClear }) => {
+  const info = SECTION_INFO[sectionKey];
+  if (!info) return null;
+
+  const colorClasses = {
+    indigo: "bg-indigo-50 border-indigo-200 text-indigo-800",
+    emerald: "bg-emerald-50 border-emerald-200 text-emerald-800",
+    blue: "bg-blue-50 border-blue-200 text-blue-800",
+    purple: "bg-purple-50 border-purple-200 text-purple-800",
+    orange: "bg-orange-50 border-orange-200 text-orange-800",
+  };
+
+  const badgeClasses = {
+    indigo: "bg-indigo-100 text-indigo-700",
+    emerald: "bg-emerald-100 text-emerald-700",
+    blue: "bg-blue-100 text-blue-700",
+    purple: "bg-purple-100 text-purple-700",
+    orange: "bg-orange-100 text-orange-700",
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      className={`mb-6 rounded-xl border p-5 relative overflow-hidden ${colorClasses[info.color] || colorClasses.indigo}`}
+    >
+      <button
+        onClick={onClear}
+        className="absolute top-3 right-3 p-1 hover:bg-black/5 rounded-full transition-colors"
+      >
+        <XCircle size={18} />
+      </button>
+
+      <div className="flex items-start gap-4">
+        <div className={`p-3 rounded-lg ${badgeClasses[info.color] || badgeClasses.indigo}`}>
+          <Info size={24} />
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="text-lg font-bold">About {info.title}</h3>
+          </div>
+          <p className="opacity-90 mb-4 text-sm leading-relaxed">
+            {info.description}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <CheckCircle size={12} /> Key Components
+              </h4>
+              <ul className="space-y-1">
+                {info.includes.map((item, i) => (
+                  <li key={i} className="text-xs flex items-center gap-2">
+                    <div className="w-1 h-1 rounded-full bg-current" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                  <Calculator size={12} /> Calculation Logic
+                </h4>
+                <p className="text-xs opacity-80 italic">{info.calculation}</p>
+              </div>
+              <div className="p-2.5 rounded-lg bg-white/50 border border-current/10">
+                <p className="text-xs font-medium italic">
+                  <strong>💡 Pro Tip:</strong> {info.tip}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 
 const KpiCard = ({ title, value, icon, prefix = "", suffix = "", loading, decimals = 0 }) => {
   if (loading) {
@@ -160,8 +324,29 @@ export default function ReportsDashboard() {
   const [gstReportLoading, setGstReportLoading] = useState(false);
   const [gstStartDate, setGstStartDate] = useState("");
   const [gstEndDate, setGstEndDate] = useState("");
+  const [selectedSectionInfo, setSelectedSectionInfo] = useState(null);
+
+  const handleSeedChartOfAccounts = async () => {
+    if (!window.confirm("This will create a standard Chart of Accounts for a Resort/Hotel. Existing account groups and ledgers will remain. Continue?")) return;
+    try {
+      const response = await API.post("/accounts/seed-chart-of-accounts");
+      toast.success(response.data.message || "Chart of Accounts seeded successfully!");
+      fetchAccountGroups();
+      fetchAccountLedgers();
+    } catch (error) {
+      console.error("Seeding error:", error);
+      toast.error(error.response?.data?.detail || "Failed to seed Chart of Accounts");
+    }
+  };
   const [gstr2bReconcileData, setGstr2bReconcileData] = useState(null);
   const [gstr2bLoading, setGstr2bLoading] = useState(false);
+
+  // Automatically update the info panel when the tab changes, if it's already open
+  useEffect(() => {
+    if (selectedSectionInfo) {
+      setSelectedSectionInfo(activeAccountingTab);
+    }
+  }, [activeAccountingTab]);
 
 
   // Department Reports States
@@ -1230,7 +1415,7 @@ export default function ReportsDashboard() {
                   : "text-gray-600 hover:text-gray-800"
                   }`}
               >
-                <TrendingUp className="inline mr-2" size={18} />
+                <Activity className="inline mr-2" size={18} />
                 Automatic Reports
               </button>
               <button
@@ -1240,7 +1425,7 @@ export default function ReportsDashboard() {
                   : "text-gray-600 hover:text-gray-800"
                   }`}
               >
-                <FileText className="inline mr-2" size={18} />
+                <Database className="inline mr-2" size={18} />
                 Comprehensive Report
               </button>
               <button
@@ -1250,10 +1435,18 @@ export default function ReportsDashboard() {
                   : "text-gray-600 hover:text-gray-800"
                   }`}
               >
-                <Calculator className="inline mr-2" size={18} />
+                <Receipt className="inline mr-2" size={18} />
                 GST Reports
               </button>
             </div>
+
+            {/* Info Panel Integration */}
+            {selectedSectionInfo && (
+              <SectionInfoPanel
+                sectionKey={selectedSectionInfo}
+                onClear={() => setSelectedSectionInfo(null)}
+              />
+            )}
 
             {/* Chart of Accounts Tab */}
             {activeAccountingTab === "chart-of-accounts" && (
@@ -1261,18 +1454,36 @@ export default function ReportsDashboard() {
                 {/* Account Groups */}
                 <div className="lg:col-span-1 bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold">Account Groups</h2>
-                    <button
-                      onClick={() => {
-                        setEditingGroup(null);
-                        setGroupForm({ name: "", account_type: "Revenue", description: "" });
-                        setShowGroupModal(true);
-                      }}
-                      className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-                    >
-                      <Plus size={16} className="inline mr-1" />
-                      Add Group
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-xl font-bold">Account Groups</h2>
+                      <button
+                        onClick={() => setSelectedSectionInfo("chart-of-accounts")}
+                        className="text-gray-400 hover:text-indigo-600 transition-colors"
+                      >
+                        <Info size={18} />
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSeedChartOfAccounts}
+                        className="px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 flex items-center gap-1"
+                        title="Seed Standard Chart of Accounts"
+                      >
+                        <RefreshCw size={14} />
+                        Seed CoA
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingGroup(null);
+                          setGroupForm({ name: "", account_type: "Revenue", description: "" });
+                          setShowGroupModal(true);
+                        }}
+                        className="px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+                      >
+                        <Plus size={16} className="inline mr-1" />
+                        Add Group
+                      </button>
+                    </div>
                   </div>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
                     {accountGroups.map((group) => (
@@ -1415,8 +1626,16 @@ export default function ReportsDashboard() {
             {/* Journal Entries Tab */}
             {activeAccountingTab === "journal-entries" && (
               <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold">Journal Entries</h2>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-bold">Journal Entries</h2>
+                    <button
+                      onClick={() => setSelectedSectionInfo("journal-entries")}
+                      className="text-gray-400 hover:text-emerald-600 transition-colors"
+                    >
+                      <Info size={18} />
+                    </button>
+                  </div>
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={async () => {
@@ -1577,7 +1796,15 @@ export default function ReportsDashboard() {
             {activeAccountingTab === "trial-balance" && (
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-bold">Trial Balance</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-bold">Trial Balance</h2>
+                    <button
+                      onClick={() => setSelectedSectionInfo("trial-balance")}
+                      className="text-gray-400 hover:text-blue-600 transition-colors"
+                    >
+                      <Info size={18} />
+                    </button>
+                  </div>
                   <button
                     onClick={fetchTrialBalance}
                     className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
@@ -1643,7 +1870,15 @@ export default function ReportsDashboard() {
             {activeAccountingTab === "auto-report" && (
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold">Automatic Accounting Report</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-bold">Automatic Accounting Report</h2>
+                    <button
+                      onClick={() => setSelectedSectionInfo("auto-report")}
+                      className="text-gray-400 hover:text-orange-600 transition-colors"
+                    >
+                      <Info size={18} />
+                    </button>
+                  </div>
                   <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-2">
                       <label className="text-sm font-medium">Start Date:</label>
@@ -1833,7 +2068,15 @@ export default function ReportsDashboard() {
             {activeAccountingTab === "comprehensive-report" && (
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold">Comprehensive Report - All Data</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-bold">Comprehensive Report - All Data</h2>
+                    <button
+                      onClick={() => setSelectedSectionInfo("comprehensive-report")}
+                      className="text-gray-400 hover:text-indigo-600 transition-colors"
+                    >
+                      <Info size={18} />
+                    </button>
+                  </div>
                   <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-2">
                       <label className="text-sm font-medium">Start Date:</label>
@@ -2316,7 +2559,15 @@ export default function ReportsDashboard() {
             {activeAccountingTab === "gst-reports" && (
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold">GST Reports (GSTR-1 & GSTR-3B)</h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-bold">GST Reports (GSTR-1 & GSTR-3B)</h2>
+                    <button
+                      onClick={() => setSelectedSectionInfo("gst-reports")}
+                      className="text-gray-400 hover:text-purple-600 transition-colors"
+                    >
+                      <Info size={18} />
+                    </button>
+                  </div>
                   <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-2">
                       <label className="text-sm font-medium">Start Date:</label>

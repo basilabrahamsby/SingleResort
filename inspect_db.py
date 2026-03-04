@@ -1,20 +1,19 @@
-import os
-from sqlalchemy import create_engine, inspect
-from dotenv import load_dotenv
+from app.database import SessionLocal
+from sqlalchemy import text
 
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    print("No DATABASE_URL found")
-    exit(1)
+def inspect_emps():
+    db = SessionLocal()
+    try:
+        res = db.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'employees';"))
+        cols = [row[0] for row in res.fetchall()]
+        print(f"Employees columns: {cols}")
+        
+        # Also check users
+        res = db.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name = 'users';"))
+        cols = [row[0] for row in res.fetchall()]
+        print(f"Users columns: {cols}")
+    finally:
+        db.close()
 
-engine = create_engine(DATABASE_URL)
-inspector = inspect(engine)
-
-target_tables = ["employees", "leaves", "attendances", "working_logs", "salary_payments", "system_settings"]
-
-for table_name in inspector.get_table_names():
-    if table_name in target_tables:
-        print(f"\nTable: {table_name}")
-        for column in inspector.get_columns(table_name):
-            print(f"  Column: {column['name']} ({column['type']})")
+if __name__ == "__main__":
+    inspect_emps()

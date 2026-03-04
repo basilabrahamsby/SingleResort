@@ -857,7 +857,11 @@ def update_assigned_status(
             except Exception as notif_error:
                 print(f"[WARNING] Failed to send status notification: {notif_error}")
         
-        return updated_service
+        return {
+            "id": updated_service.id,
+            "status": updated_service.status.value if hasattr(updated_service.status, 'value') else str(updated_service.status),
+            "billing_status": updated_service.billing_status
+        }
     except Exception as e:
         import traceback
         print(f"[ERROR] Error updating assigned service status: {str(e)}")

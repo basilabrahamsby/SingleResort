@@ -3,7 +3,7 @@ import { formatCurrency } from '../utils/currency';
 import DashboardLayout from "../layout/DashboardLayout";
 import api from "../services/api";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar as CalendarIcon, User, DollarSign, Utensils, ConciergeBell, BedDouble, Package, AlertCircle, Search, UserCheck, Briefcase, Clock, Users, ChevronLeft, ChevronRight, TrendingUp, Settings, ShieldCheck, Edit, Trash2 } from "lucide-react";
+import { Calendar as CalendarIcon, User, DollarSign, Utensils, ConciergeBell, BedDouble, Package, AlertCircle, Search, UserCheck, Briefcase, Clock, Users, ChevronLeft, ChevronRight, TrendingUp, Settings, ShieldCheck, Edit, Trash2, Activity, Eye, CheckSquare } from "lucide-react";
 
 
 import * as XLSX from "xlsx";
@@ -20,7 +20,7 @@ import 'react-calendar/dist/Calendar.css';
 import PayrollManagement from "../components/PayrollManagement";
 import LeavePolicyManagement from "../components/LeavePolicyManagement";
 import RoleManagementTab from "../components/RoleManagementTab";
-
+import DailyTaskReport from "../components/DailyTaskReport";
 
 const EmployeeOverview = () => {
   const [date, setDate] = useState(new Date());
@@ -141,6 +141,21 @@ const EmployeeOverview = () => {
         </div>
 
         <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+            <Activity size={24} className="animate-pulse" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Currently Online</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-gray-800">
+                {workforceStatus.currently_online || 0}
+              </span>
+              <span className="text-[10px] text-gray-400">On duty now</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
           <div className="w-12 h-12 rounded-lg bg-green-50 flex items-center justify-center text-green-600">
             <Clock size={24} />
           </div>
@@ -150,7 +165,7 @@ const EmployeeOverview = () => {
               <span className="text-2xl font-black text-gray-800">
                 {workforceStatus.active_today}
               </span>
-              <span className="text-[10px] text-gray-400">Normal operations</span>
+              <span className="text-[10px] text-gray-400">Staff movement</span>
             </div>
           </div>
         </div>
@@ -177,7 +192,7 @@ const EmployeeOverview = () => {
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Payroll Est.</p>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-gray-800">
-                {formatCurrency(employees.reduce((acc, emp) => acc + (emp.salary || 0), 0))}
+                {formatCurrency(employees.reduce((acc, emp) => acc + (emp?.salary || 0), 0))}
               </span>
               <span className="text-[10px] text-gray-400">Monthly</span>
             </div>
@@ -691,12 +706,29 @@ const AttendanceTracking = () => {
     if (!selectedEmployeeId) return showMessage('Please select an employee.', 'error');
 
     // Check if there's an open clock-in before attempting clock-out
-    const hasOpenClockIn = workLogs.some(log =>
-      log.check_out_time === null || log.check_out_time === undefined
-    );
+    const openLog = workLogs.find(log => log.check_out_time === null || log.check_out_time === undefined);
 
-    if (!hasOpenClockIn) {
+    if (!openLog) {
       return showMessage('Please clock in first before clocking out.', 'error');
+    }
+
+    const emp = employees.find(e => String(e.id) === String(selectedEmployeeId));
+    let dailyTasks = [];
+    try { 
+      dailyTasks = emp?.daily_tasks ? JSON.parse(emp.daily_tasks) : []; 
+      if (!Array.isArray(dailyTasks)) dailyTasks = emp?.daily_tasks ? [emp.daily_tasks] : [];
+    } catch {
+      dailyTasks = emp?.daily_tasks ? [emp.daily_tasks] : [];
+    }
+
+    if (dailyTasks.length > 0) {
+      let completedTasks = [];
+      try { completedTasks = JSON.parse(openLog.completed_tasks || "[]"); } catch {}
+      
+      const allTasksCompleted = dailyTasks.every(task => completedTasks.includes(task));
+      if (!allTasksCompleted) {
+        return showMessage('Please complete all assigned active shift tasks before clocking out.', 'error');
+      }
     }
 
     try {
@@ -709,6 +741,32 @@ const AttendanceTracking = () => {
       const errorMsg = err.response?.data?.detail;
       const message = typeof errorMsg === 'string' ? errorMsg : 'Failed to clock out.';
       showMessage(message, 'error');
+    }
+  };
+
+  const handleTaskToggle = async (logId, currentTasksJSON, taskName) => {
+    let tasks = [];
+    try {
+      tasks = JSON.parse(currentTasksJSON || "[]");
+    } catch {
+      tasks = [];
+    }
+
+    if (tasks.includes(taskName)) {
+      tasks = tasks.filter(t => t !== taskName);
+    } else {
+      tasks.push(taskName);
+    }
+
+    try {
+      // Must await without directly causing rerender issues
+      const res = await api.put(`/attendance/work-logs/${logId}/tasks`, {
+        completed_tasks: JSON.stringify(tasks)
+      });
+      setWorkLogs(prevLogs => prevLogs.map(log => log.id === logId ? { ...log, completed_tasks: res.data.completed_tasks } : log));
+    } catch (err) {
+      console.error("Failed to update task", err);
+      showMessage("Failed to update task status.", "error");
     }
   };
 
@@ -821,6 +879,48 @@ const AttendanceTracking = () => {
               <button onClick={handleClockIn} className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">Clock In</button>
               <button onClick={handleClockOut} className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">Clock Out</button>
             </div>
+
+            {/* Daily Tasks Checklist for Active Session */}
+            {(() => {
+              const openLog = workLogs.find(log => log.check_out_time === null || log.check_out_time === undefined);
+              if (!openLog) return null;
+
+              const emp = employees.find(e => String(e.id) === String(selectedEmployeeId));
+              let dailyTasks = [];
+              try {
+                dailyTasks = emp?.daily_tasks ? JSON.parse(emp.daily_tasks) : [];
+                if (!Array.isArray(dailyTasks)) dailyTasks = emp?.daily_tasks ? [emp.daily_tasks] : [];
+              } catch {
+                dailyTasks = emp?.daily_tasks ? [emp.daily_tasks] : [];
+              }
+
+              if (dailyTasks.length === 0) return null;
+
+              let completedTasks = [];
+              try { completedTasks = JSON.parse(openLog.completed_tasks || "[]"); } catch { }
+
+              return (
+                <div className="mt-6 border-t pt-4">
+                  <h4 className="text-sm font-semibold border-l-4 border-indigo-500 pl-2 text-indigo-900 mb-3 bg-indigo-50 p-1 rounded-r">Active Shift Tasks</h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                    {dailyTasks.map((task, idx) => {
+                      const isCompleted = completedTasks.includes(task);
+                      return (
+                        <label key={idx} className={`flex items-start space-x-3 cursor-pointer p-3 rounded-lg border transition-all ${isCompleted ? 'bg-gray-50 border-gray-200' : 'bg-white border-indigo-100 shadow-sm hover:border-indigo-300 hover:shadow'}`}>
+                          <input
+                            type="checkbox"
+                            checked={isCompleted}
+                            onChange={() => handleTaskToggle(openLog.id, openLog.completed_tasks, task)}
+                            className="mt-0.5 w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className={`text-sm flex-1 ${isCompleted ? 'line-through text-gray-400 font-medium' : 'text-gray-700 font-medium'}`}>{task}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Calculated Attendance Report */}
@@ -956,6 +1056,7 @@ const AttendanceTracking = () => {
                                           <th className="py-2 px-3 text-left font-semibold text-gray-700 border-b">Check-out Time</th>
                                           <th className="py-2 px-3 text-left font-semibold text-gray-700 border-b">Location</th>
                                           <th className="py-2 px-3 text-left font-semibold text-gray-700 border-b">Duration</th>
+                                          <th className="py-2 px-3 text-left font-semibold text-gray-700 border-b">Tasks Done</th>
                                           <th className="py-2 px-3 text-left font-semibold text-gray-700 border-b">Status</th>
                                         </tr>
                                       </thead>
@@ -984,6 +1085,25 @@ const AttendanceTracking = () => {
                                                 )}
                                               </td>
                                               <td className="py-2 px-3">
+                                                {(() => {
+                                                  let tasksList = [];
+                                                  try { tasksList = JSON.parse(log.completed_tasks || "[]"); } catch { }
+                                                  if (tasksList.length === 0) return <span className="text-gray-400">-</span>;
+                                                  return (
+                                                    <div className="flex flex-col gap-1">
+                                                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 w-fit">
+                                                        {tasksList.length} task(s)
+                                                      </span>
+                                                      <ul className="list-disc pl-4 mt-1 text-[11px] text-gray-600 space-y-0.5">
+                                                        {tasksList.map((t, tidx) => (
+                                                          <li key={tidx}>{t}</li>
+                                                        ))}
+                                                      </ul>
+                                                    </div>
+                                                  );
+                                                })()}
+                                              </td>
+                                              <td className="py-2 px-3">
                                                 {isOpen ? (
                                                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">
                                                     Open
@@ -998,7 +1118,7 @@ const AttendanceTracking = () => {
                                           );
                                         }) : (
                                           <tr>
-                                            <td colSpan="5" className="py-4 text-center text-gray-500">
+                                            <td colSpan="6" className="py-4 text-center text-gray-500">
                                               No logs available for this date
                                             </td>
                                           </tr>
@@ -1179,8 +1299,9 @@ const StatusOverview = () => {
 const EmployeeListAndForm = () => {
   const [employees, setEmployees] = useState([]);
   const [roles, setRoles] = useState([]);
-  const [form, setForm] = useState({ name: "", role: "", salary: "", join_date: "", email: "", phone: "", password: "", image: null });
+  const [form, setForm] = useState({ name: "", role: "", salary: "", join_date: "", email: "", phone: "", password: "", daily_tasks: [], image: null });
   const [previewImage, setPreviewImage] = useState(null);
+  const [newTaskInput, setNewTaskInput] = useState("");
   const [editId, setEditId] = useState(null);
   const [salaryFilter, setSalaryFilter] = useState("");
   const [hasMore, setHasMore] = useState(true);
@@ -1220,20 +1341,28 @@ const EmployeeListAndForm = () => {
       // Combine users with their employee data
       const combinedUsers = users
         .filter(user => user.role?.name?.toLowerCase() !== 'guest') // Hide guest users from employee management
-        .map(user => ({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role?.name || 'Unknown',
-          phone: user.phone,
-          is_active: user.is_active,
-          // Add employee-specific data if available
-          salary: employeeMap.get(user.id)?.salary || null,
-          join_date: employeeMap.get(user.id)?.join_date || null,
-          image_url: employeeMap.get(user.id)?.image_url || null,
-          has_employee_record: employeeMap.has(user.id),
-          trend: Array.from({ length: 30 }, () => Math.floor(Math.random() * 10000))
-        }));
+        .map(user => {
+          const empData = employeeMap.get(user.id);
+          return {
+            id: user.id,
+            employee_id: empData?.id || null, // Use this for API routes referencing employee_id
+            name: user.name,
+            email: user.email,
+            role: user.role?.name || 'Unknown',
+            phone: user.phone,
+            is_active: user.is_active,
+            // Add employee-specific data if available
+            salary: empData?.salary || null,
+            join_date: empData?.join_date || null,
+            image_url: empData?.image_url || null,
+            daily_tasks: empData?.daily_tasks || null,
+            has_employee_record: !!empData,
+            status: empData?.status || 'off_duty',
+            current_status: empData?.current_status || 'Off Duty',
+            is_clocked_in: empData?.is_clocked_in || false,
+            trend: Array.from({ length: 30 }, () => Math.floor(Math.random() * 10000))
+          };
+        });
 
       setEmployees(combinedUsers);
       setHasMore(combinedUsers.length >= 1000);
@@ -1304,6 +1433,7 @@ const EmployeeListAndForm = () => {
       data.append("password", form.password);
     }
     if (form.phone) data.append("phone", form.phone);
+    if (form.daily_tasks) data.append("daily_tasks", JSON.stringify(form.daily_tasks));
     if (form.image) data.append("image", form.image);
 
     try {
@@ -1322,13 +1452,27 @@ const EmployeeListAndForm = () => {
   };
 
   const resetForm = () => {
-    setForm({ name: "", role: "", salary: "", join_date: "", email: "", phone: "", password: "", is_active: true, image: null });
+    setForm({ name: "", role: "", salary: "", join_date: "", email: "", phone: "", password: "", daily_tasks: [], is_active: true, image: null });
     setPreviewImage(null);
     setEditId(null);
+    setNewTaskInput("");
   };
 
   const handleEdit = (emp) => {
-    setEditId(emp.id);
+    if (!emp.has_employee_record) {
+      alert("This system user does not have an employee record to edit.");
+      return;
+    }
+    setEditId(emp.employee_id);
+
+    let parsedTasks = [];
+    try {
+      parsedTasks = emp.daily_tasks ? JSON.parse(emp.daily_tasks) : [];
+      if (!Array.isArray(parsedTasks)) parsedTasks = emp.daily_tasks ? [emp.daily_tasks] : [];
+    } catch {
+      parsedTasks = emp.daily_tasks ? [emp.daily_tasks] : [];
+    }
+
     setForm({
       name: emp.name,
       role: emp.role,
@@ -1337,6 +1481,7 @@ const EmployeeListAndForm = () => {
       email: emp.email,
       phone: emp.phone,
       password: "", // Leave empty for edit - only update if provided
+      daily_tasks: parsedTasks,
       is_active: emp.is_active !== undefined ? emp.is_active : true,
       image: null,
     });
@@ -1353,10 +1498,14 @@ const EmployeeListAndForm = () => {
     if (!window.confirm(`Are you sure you want to ${emp.is_active ? 'deactivate' : 'activate'} this employee?`)) {
       return;
     }
+    if (!emp.has_employee_record) {
+      alert("Cannot manage status of system users without an employee record here.");
+      return;
+    }
     try {
       const data = new FormData();
       data.append("is_active", String(!emp.is_active)); // Convert to string for FormData
-      await api.put(`/employees/${emp.id}`, data, authHeader());
+      await api.put(`/employees/${emp.employee_id}`, data, authHeader());
       fetchEmployees();
     } catch (err) {
       const errorMessage = err.response?.data?.detail || "An error occurred while updating employee status.";
@@ -1365,9 +1514,13 @@ const EmployeeListAndForm = () => {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (emp) => {
+    if (!emp.has_employee_record) {
+      alert("Cannot delete system users without an employee record here.");
+      return;
+    }
     if (window.confirm("Delete this employee?")) {
-      await api.delete(`/employees/${id}`, authHeader());
+      await api.delete(`/employees/${emp.employee_id}`, authHeader());
       fetchEmployees();
     }
   };
@@ -1400,9 +1553,9 @@ const EmployeeListAndForm = () => {
   };
 
   const totalEmployees = employees.length;
-  const avgSalary = employees.length > 0 ? Math.round(employees.reduce((acc, e) => acc + e.salary, 0) / employees.length) : 0;
+  const avgSalary = employees.length > 0 ? Math.round(employees.reduce((acc, e) => acc + (e?.salary || 0), 0) / employees.length) : 0;
   const rolesCount = roles.map((r) => ({ name: r.name, count: employees.filter((e) => e.role === r.name).length, trend: Array.from({ length: 30 }, () => Math.floor(Math.random() * 10000)) }));
-  const kpiData = [{ label: "Total Employees", value: totalEmployees, color: "#4f46e5", trend: employees.map(e => e.salary) }, { label: "Avg Salary", value: avgSalary, color: "#16a34a", trend: employees.map(e => e.salary) }, ...rolesCount.map(r => ({ label: r.name, value: r.count, color: "#f59e0b", trend: r.trend }))];
+  const kpiData = [{ label: "Total Employees", value: totalEmployees, color: "#4f46e5", trend: employees.map(e => e?.salary || 0) }, { label: "Avg Salary", value: avgSalary, color: "#16a34a", trend: employees.map(e => e?.salary || 0) }, ...rolesCount.map(r => ({ label: r.name, value: r.count, color: "#f59e0b", trend: r.trend }))];
 
   return (
     <div className="space-y-6">
@@ -1424,7 +1577,7 @@ const EmployeeListAndForm = () => {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
           <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Financial Commitment</p>
           <h4 className="text-3xl font-black text-gray-800">
-            {formatCurrency(employees.reduce((acc, e) => acc + (e.salary || 0), 0))}
+            {formatCurrency(employees.reduce((acc, e) => acc + (e?.salary || 0), 0))}
           </h4>
           <p className="text-[10px] mt-4 font-bold text-gray-400">Total Monthly Salary Burden</p>
         </div>
@@ -1503,6 +1656,61 @@ const EmployeeListAndForm = () => {
                   <input name="email" type="email" value={form.email} onChange={handleFormChange} placeholder="Corporate Email" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all" required />
                   <input name="phone" type="tel" value={form.phone} onChange={handleFormChange} placeholder="Phone Number" className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all mt-2" />
                   <input name="password" type="password" value={form.password} onChange={handleFormChange} placeholder={editId ? "Overwrite Password (Optional)" : "System Password"} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all mt-2" required={!editId} />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Daily Operations (To-Do List)</p>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTaskInput}
+                      onChange={(e) => setNewTaskInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (newTaskInput.trim()) {
+                            setForm({ ...form, daily_tasks: [...form.daily_tasks, newTaskInput.trim()] });
+                            setNewTaskInput("");
+                          }
+                        }
+                      }}
+                      placeholder="Add a new task & press Enter..."
+                      className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-orange-500 transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (newTaskInput.trim()) {
+                          setForm({ ...form, daily_tasks: [...form.daily_tasks, newTaskInput.trim()] });
+                          setNewTaskInput("");
+                        }
+                      }}
+                      className="px-6 py-2.5 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-black transition-all"
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {form.daily_tasks && form.daily_tasks.length > 0 && (
+                    <ul className="space-y-2 mt-4">
+                      {form.daily_tasks.map((task, idx) => (
+                        <li key={idx} className="flex justify-between items-center bg-white px-4 py-3 rounded-xl border border-gray-100 shadow-sm group">
+                          <span className="text-gray-800 text-sm font-semibold flex items-center gap-3">
+                            <span className="w-1.5 h-1.5 rounded-full bg-orange-400"></span>
+                            {task}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setForm({ ...form, daily_tasks: form.daily_tasks.filter((_, i) => i !== idx) })}
+                            className="text-gray-300 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
 
@@ -1586,21 +1794,30 @@ const EmployeeListAndForm = () => {
                         <p className="text-[10px] text-gray-400 font-bold flex items-center gap-2">
                           <Clock size={12} /> Joined: {emp.join_date || 'N/A'}
                         </p>
-                        <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${emp.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          <div className={`w-1.5 h-1.5 rounded-full ${emp.is_active ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                          {emp.is_active ? 'In Good Standing' : 'Inactive / Blocked'}
+                        <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${emp.is_clocked_in ? 'bg-green-100 text-green-700' : (emp.status === 'on_leave' ? 'bg-orange-100 text-orange-700' : (emp.is_active ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'))}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${emp.is_clocked_in ? 'bg-green-500 animate-pulse' : (emp.status === 'on_leave' ? 'bg-orange-500' : (emp.is_active ? 'bg-blue-500' : 'bg-red-500'))}`}></div>
+                          {emp.is_clocked_in ? 'Online / On Duty' : (emp.status === 'on_leave' ? 'On Leave' : (emp.is_active ? 'In Good Standing' : 'Inactive / Blocked'))}
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handleEdit(emp)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Review Dossier">
+                        <button onClick={() => {
+                          if (!emp.has_employee_record) {
+                            alert("This user does not have an employee record.");
+                            return;
+                          }
+                          setSelectedEmployeeId(emp.employee_id);
+                        }} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="View Full Profile & Tasks">
+                          <Eye size={16} />
+                        </button>
+                        <button onClick={() => handleEdit(emp)} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Edit Dossier">
                           <Edit size={16} />
                         </button>
                         <button onClick={() => handleToggleActive(emp)} className={`p-2 rounded-lg transition-all ${emp.is_active ? 'text-gray-400 hover:text-orange-600 hover:bg-orange-50' : 'text-gray-400 hover:text-green-600 hover:bg-green-50'}`} title={emp.is_active ? "Suspend Access" : "Restore Access"}>
                           <AlertCircle size={16} />
                         </button>
-                        <button onClick={() => handleDelete(emp.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Purge Record">
+                        <button onClick={() => handleDelete(emp)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Purge Record">
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -1787,6 +2004,7 @@ const EmployeeManagement = () => {
       case 'leave-policy': return <LeavePolicyManagement />;
       case 'roles': return <RoleManagementTab />;
       case 'holidays': return <HolidayManagement />;
+      case 'daily-tasks': return <DailyTaskReport />;
       default: return null;
     }
   };
@@ -1822,6 +2040,7 @@ const EmployeeManagement = () => {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-1.5 flex flex-wrap gap-1">
             <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider w-full mb-1">Operations</div>
             <TabButton id="attendance" label="Attendance" icon={<Clock size={18} />} />
+            <TabButton id="daily-tasks" label="Daily Task Report" icon={<CheckSquare size={18} />} />
             <TabButton id="leave" label="Leave Mgt" icon={<UserCheck size={18} />} />
             <TabButton id="payroll" label="Payroll" icon={<DollarSign size={18} />} />
           </div>

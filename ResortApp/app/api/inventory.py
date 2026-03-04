@@ -2398,7 +2398,11 @@ def get_location_items(
         ).all()
 
     # Iterate and filter manually for this location context
+    existing_refs = set(item['reference'] for item in history if item.get('reference'))
     for adj in adjustments:
+        if adj.reference_number and adj.reference_number in existing_refs:
+            continue
+            
         # Check if this transaction is relevant to this location
         # Our checkout fix used: reference_number=f"ADJ-CHK-{checkout_request.id}"
         # and notes=f"... Deducted from Source ID {adjust_source_id}."

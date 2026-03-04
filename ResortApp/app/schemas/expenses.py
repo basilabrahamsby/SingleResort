@@ -9,6 +9,7 @@ class ExpenseBase(BaseModel):
     description: Optional[str] = None
     employee_id: int
     department: Optional[str] = None  # Restaurant, Facility, Hotel, Office, Security, Fire & Safety, Housekeeping
+    status: Optional[str] = "Pending"
     # RCM fields
     rcm_applicable: Optional[bool] = False
     rcm_tax_rate: Optional[float] = None
@@ -28,6 +29,7 @@ class ExpenseUpdate(BaseModel):
     description: Optional[str]
     employee_id: Optional[int]
     department: Optional[str]
+    status: Optional[str]
 
 class ExpenseOut(BaseModel):
     id: int
@@ -38,6 +40,7 @@ class ExpenseOut(BaseModel):
     employee_id: int
     image: Optional[str]
     department: Optional[str]
+    status: str
     employee_name: str
     created_at: datetime
 

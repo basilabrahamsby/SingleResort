@@ -493,7 +493,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
                   barTouchData: BarTouchData(
                     enabled: true,
                     touchTooltipData: BarTouchTooltipData(
-                       tooltipBgColor: Colors.blueGrey,
+                       getTooltipColor: (group) => Colors.blueGrey,
                        getTooltipItem: (group, groupIndex, rod, rodIndex) {
                          String type = rodIndex == 0 ? 'Income' : 'Expense';
                          return BarTooltipItem(
@@ -1736,197 +1736,7 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
     );
   }
 
-  Widget _buildAccountingTab(BuildContext context, NumberFormat format) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text(
-          'Accounting Module',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Manage your chart of accounts, journal entries, and trial balance',
-          style: TextStyle(color: Colors.grey[600]),
-        ),
-        const SizedBox(height: 24),
 
-        // Chart of Accounts Section
-        _buildAccountingCard(
-          title: 'Chart of Accounts',
-          description: 'Manage account groups and ledgers',
-          icon: Icons.account_tree,
-          color: Colors.blue,
-          onTap: () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const ChartOfAccountsScreen()));
-          },
-        ),
-        const SizedBox(height: 16),
-
-        // Journal Entries Section
-        _buildAccountingCard(
-          title: 'Journal Entries',
-          description: 'Create and manage manual journal entries',
-          icon: Icons.edit_note,
-          color: Colors.green,
-          onTap: () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const JournalEntriesScreen()));
-          },
-        ),
-        const SizedBox(height: 16),
-
-        // Trial Balance Section
-        _buildAccountingCard(
-          title: 'Trial Balance',
-          description: 'View trial balance and verify accounts',
-          icon: Icons.balance,
-          color: Colors.purple,
-          onTap: () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const TrialBalanceScreen()));
-          },
-        ),
-        const SizedBox(height: 24),
-
-        // Quick Stats
-        const Text(
-          'Quick Access',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 16),
-
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 1.5,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          children: [
-            _buildQuickAccessCard(
-              'Ledgers',
-              Icons.book,
-              Colors.indigo,
-              () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const LedgerScreen()));
-              },
-            ),
-            _buildQuickAccessCard(
-              'GST Reports',
-              Icons.receipt_long,
-              Colors.orange,
-              () {
-                final kpi = Provider.of<DashboardProvider>(context, listen: false).kpiSummary;
-                if (kpi != null) {
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => GstReportScreen(kpi: kpi)));
-                }
-              },
-            ),
-            _buildQuickAccessCard(
-              'P&L Statement',
-              Icons.trending_up,
-              Colors.green,
-              () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const PnLScreen()));
-              },
-            ),
-            _buildQuickAccessCard(
-              'Vendor Payables',
-              Icons.people,
-              Colors.red,
-              () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const VendorReportScreen()));
-              },
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAccountingCard({
-    required String title,
-    required String description,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color, size: 32),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      description,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[400]),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildQuickAccessCard(String title, IconData icon, Color color, VoidCallback onTap) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 32),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 
   void _exportToCSV(BuildContext context, ExpenseProvider provider) {
     final expenses = provider.expenses;
@@ -2012,4 +1822,183 @@ class _ExpenseScreenState extends State<ExpenseScreen> {
       ),
     );
   }
+
+  // ── Accounting Tab ──────────────────────────────────────────────────────────
+  Widget _buildAccountingTab(BuildContext ctx, NumberFormat fmt) {
+    final dashboardProvider = Provider.of<DashboardProvider>(ctx, listen: false);
+    final kpi = dashboardProvider.kpiSummary;
+
+    final List<_AccountingMenuItem> items = [
+      _AccountingMenuItem(
+        icon: Icons.account_tree_outlined,
+        color: const Color(0xFF4F46E5),
+        title: 'Chart of Accounts',
+        subtitle: 'View & manage account groups and ledgers',
+        onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const ChartOfAccountsScreen())),
+      ),
+      _AccountingMenuItem(
+        icon: Icons.receipt_long_outlined,
+        color: const Color(0xFF0891B2),
+        title: 'Journal Entries',
+        subtitle: 'Double-entry bookkeeping records',
+        onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const JournalEntriesScreen())),
+      ),
+      _AccountingMenuItem(
+        icon: Icons.balance_outlined,
+        color: const Color(0xFF059669),
+        title: 'Trial Balance',
+        subtitle: 'Verify debit and credit totals',
+        onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const TrialBalanceScreen())),
+      ),
+      _AccountingMenuItem(
+        icon: Icons.percent_outlined,
+        color: const Color(0xFFD97706),
+        title: 'GST Reports',
+        subtitle: 'Output tax, ITC, and net GST payable',
+        onTap: () {
+          if (kpi == null) {
+            ScaffoldMessenger.of(ctx).showSnackBar(
+              const SnackBar(content: Text('GST data loading, please wait...')),
+            );
+            dashboardProvider.fetchKPIData().then((_) {
+              final updatedKpi = dashboardProvider.kpiSummary;
+              if (updatedKpi != null && ctx.mounted) {
+                Navigator.push(ctx, MaterialPageRoute(builder: (_) => GstReportScreen(kpi: updatedKpi)));
+              }
+            });
+          } else {
+            Navigator.push(ctx, MaterialPageRoute(builder: (_) => GstReportScreen(kpi: kpi)));
+          }
+        },
+      ),
+      _AccountingMenuItem(
+        icon: Icons.trending_up_outlined,
+        color: const Color(0xFF7C3AED),
+        title: 'Profit & Loss',
+        subtitle: 'Revenue vs expenses analysis',
+        onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const PnLScreen())),
+      ),
+      _AccountingMenuItem(
+        icon: Icons.book_outlined,
+        color: const Color(0xFFDB2777),
+        title: 'Ledger',
+        subtitle: 'Transaction history per account',
+        onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: (_) => const LedgerScreen())),
+      ),
+    ];
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // GST quick stats card
+        if (kpi != null) ...[
+          Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('GST Summary', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _gstStat('Output GST', fmt.format(kpi.totalOutputTax), Colors.red[200]!),
+                    _gstStat('Input ITC', fmt.format(kpi.totalInputTax), Colors.green[200]!),
+                    _gstStat(
+                      'Net Payable',
+                      fmt.format((kpi.totalOutputTax - kpi.totalInputTax).abs()),
+                      kpi.totalOutputTax > kpi.totalInputTax ? Colors.orange[200]! : Colors.green[200]!,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+
+        const Text(
+          'Accounting',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+        ),
+        const SizedBox(height: 12),
+
+        ...items.map((item) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: InkWell(
+            onTap: item.onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: item.color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(item.icon, color: item.color, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(item.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                        const SizedBox(height: 2),
+                        Text(item.subtitle, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.grey[400]),
+                ],
+              ),
+            ),
+          ),
+        )),
+      ],
+    );
+  }
+
+  Widget _gstStat(String label, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 13)),
+      ],
+    );
+  }
+}
+
+class _AccountingMenuItem {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _AccountingMenuItem({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
 }

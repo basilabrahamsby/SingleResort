@@ -14,7 +14,7 @@ from app.models.checkout import Checkout, CheckoutRequest, CheckoutPayment, Chec
 from app.models.foodorder import FoodOrder, FoodOrderItem
 from app.models.inventory import (
     InventoryTransaction, LocationStock, StockIssue, StockIssueDetail,
-    PurchaseMaster, PurchaseDetail, WasteLog, AssetRegistry, AssetMapping
+    PurchaseMaster, PurchaseDetail, WasteLog, AssetRegistry, AssetMapping, LaundryLog
 )
 from app.models.notification import Notification
 
@@ -98,6 +98,7 @@ counts['stock_issues'] = db.query(StockIssue).count()
 counts['purchase_details'] = db.query(PurchaseDetail).count()
 counts['purchases'] = db.query(PurchaseMaster).count()
 counts['waste_logs'] = db.query(WasteLog).count()
+counts['laundry_logs'] = db.query(LaundryLog).count()
 
 db.query(InventoryTransaction).delete()
 db.query(LocationStock).delete()
@@ -106,6 +107,7 @@ db.query(StockIssue).delete()
 db.query(PurchaseDetail).delete()
 db.query(PurchaseMaster).delete()
 db.query(WasteLog).delete()
+db.query(LaundryLog).delete()
 
 print(f"   ✅ Deleted {counts['transactions']} transactions")
 print(f"   ✅ Deleted {counts['location_stocks']} location stocks")
@@ -114,6 +116,7 @@ print(f"   ✅ Deleted {counts['stock_issues']} stock issues")
 print(f"   ✅ Deleted {counts['purchase_details']} purchase details")
 print(f"   ✅ Deleted {counts['purchases']} purchases")
 print(f"   ✅ Deleted {counts['waste_logs']} waste logs")
+print(f"   ✅ Deleted {counts['laundry_logs']} laundry logs")
 
 # 7. Assets and Mappings
 print("\n🏢 Clearing asset registries and mappings...")

@@ -1,115 +1,64 @@
-
-import sys
-import os
-
-# Add the app directory to sys.path
-sys.path.append('/var/www/inventory/ResortApp')
-
 from app.database import SessionLocal
 from sqlalchemy import text
+import sys
 
-TABLES_TO_CLEAR = [
-    "activity_logs",
-    "bookings",
-    "booking_rooms",
-    "package_bookings",
-    "package_booking_rooms",
-    "checkouts",
-    "checkout_payments",
-    "checkout_verification",
-    "checkout_requests",
-    "service_requests",
-    "food_orders",
-    "food_order_items",
-    "inventory_transactions",
-    "stock_issues",
-    "stock_issue_details",
-    "stock_requisitions",
-    "stock_requisition_details",
-    "stock_movements",
-    "stock_usage",
-    "stock_levels",
-    "location_stocks",
-    "outlet_stocks",
-    "linen_stocks",
-    "purchase_masters",
-    "purchase_details",
-    "purchase_orders",
-    "po_items",
-    "purchase_entries",
-    "purchase_entry_items",
-    "goods_received_notes",
-    "grn_items",
-    "wastage_logs",
-    "waste_logs",
-    "expenses",
-    "inventory_expenses",
-    "notifications",
-    "working_logs",
-    "maintenance_tickets",
-    "work_orders",
-    "work_order_parts",
-    "work_order_part_issues",
-    "lost_found",
-    "laundry_services",
-    "linen_movements",
-    "linen_wash_logs",
-    "room_consumable_assignments",
-    "room_inventory_audits",
-    "journal_entries",
-    "journal_entry_lines",
-    "vouchers",
-    "payments",
-    "key_movements",
-    "guest_suggestions",
-    "fire_safety_incidents",
-    "fire_safety_inspections",
-    "fire_safety_maintenance",
-    "security_maintenance",
-    "security_uniforms",
-    "restock_alerts",
-    "expiry_alerts",
-    "eod_audits",
-    "eod_audit_items",
-    "perishable_batches",
-    "indent_items",
-    "indents",
-    "accounting_ledgers"
-]
-
-def clear_data():
+def final_cleanup():
     db = SessionLocal()
     try:
-        print("=== DELETING OPERATIONAL DATA ===")
-        # Disable triggers/constraints to speed up or handle dependencies? 
-        # TRUNCATE with CASCADE is usually enough in Postgres
+        # 1. Get Admin Role IDs
+        res = db.execute(text("SELECT id FROM roles WHERE LOWER(name) IN ('admin', 'superadmin', 'owner', 'manager');"))
+        admin_role_ids = [row[0] for row in res.fetchall()]
+        role_ids_str = ",".join(map(str, admin_role_ids))
         
-        for table in TABLES_TO_CLEAR:
-            print(f"  - Clearing {table}...")
+        # 2. Identify Users to KEEP
+        res = db.execute(text(f"SELECT id FROM users WHERE role_id IN ({role_ids_str});"))
+        keep_user_ids = [row[0] for row in res.fetchall()]
+        keep_user_ids_str = ",".join(map(str, keep_user_ids))
+        
+        print(f"Keeping User IDs: {keep_user_ids_str}")
+
+        # 3. Clear Transactional Tables (One more pass to be sure)
+        # We'll use a very long list this time
+        tables = [
+            "food_order_items", "food_orders", "service_requests", "assigned_services",
+            "checkout_verifications", "checkout_requests", "checkouts", "checkout_payments",
+            "booking_rooms", "bookings", "package_booking_rooms", "package_bookings",
+            "working_logs", "attendances", "leaves", "notifications", "activity_logs",
+            "stock_issue_details", "stock_issues", "stock_requisition_details", "stock_requisitions",
+            "inventory_transactions", "waste_logs", "wastage_logs", "consumable_usage",
+            "salary_payments", "journal_entry_lines", "journal_entries", "payments",
+            "expenses", "vouchers", "damage_reports", "laundry_logs", "room_inventory_audits",
+            "room_consumable_assignments", "audit_discrepancies", "eod_audits", "eod_audit_items"
+        ]
+        
+        for t in tables:
             try:
-                db.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
-            except Exception as e:
-                print(f"    Warning: Could not clear {table}: {e}")
+                res = db.execute(text(f"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '{t}');"))
+                if res.fetchone()[0]:
+                    db.execute(text(f"DELETE FROM {t};"))
+            except:
                 db.rollback()
-                continue
+
+        # 4. Clear Employees EXCEPT those linked to kept users
+        print("Clearing non-admin employees...")
+        db.execute(text(f"DELETE FROM employees WHERE user_id NOT IN ({keep_user_ids_str}) OR user_id IS NULL;"))
         
-        # Reset specific statuses
-        print("\n=== RESETTING MASTER DATA STATUSES ===")
-        print("  - Resetting Room status to 'Available'...")
-        db.execute(text("UPDATE rooms SET status = 'Available'"))
+        # 5. Clear Users EXCEPT those to keep
+        print("Clearing non-admin users...")
+        db.execute(text(f"DELETE FROM users WHERE id NOT IN ({keep_user_ids_str});"))
         
-        print("  - Resetting Inventory Item stock to 0...")
-        db.execute(text("UPDATE inventory_items SET current_stock = 0.0"))
+        # 6. Reset Room states
+        print("Resetting rooms...")
+        db.execute(text("UPDATE rooms SET status = 'available', housekeeping_status = 'clean' WHERE true;"))
         
         db.commit()
-        print("\n=== SYSTEM DATA CLEARED SUCCESSFULLY ===")
-        print("(Users, Roles, Rooms, Employees, Vendors, etc. were preserved)")
+        print("--- FINAL CLEANUP COMPLETED ---")
         
     except Exception as e:
+        print(f"ERROR: {e}")
         db.rollback()
-        print(f"\n[ERROR] Cleanup Failed: {e}")
     finally:
         db.close()
 
 if __name__ == "__main__":
-    clear_data()
+    final_cleanup()

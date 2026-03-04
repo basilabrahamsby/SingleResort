@@ -8,7 +8,7 @@ import {
   Calendar, Download, Filter, Search, FileText, TrendingUp,
   Users, BedDouble, Receipt, ShoppingCart, AlertTriangle,
   Clock, XCircle, Gift, Box, AlertCircle, FileCheck,
-  Wrench, Key, UserCheck, CreditCard, BarChart3
+  Wrench, Key, UserCheck, CreditCard, BarChart3, Info, X
 } from "lucide-react";
 import { formatDateIST } from "../utils/dateUtils";
 
@@ -187,6 +187,144 @@ const ReportFilters = ({ filters, onFilterChange, onClear }) => {
 };
 
 // ============================================
+// GST REPORT INFO DEFINITIONS
+// ============================================
+
+const GST_REPORT_INFO = {
+  'master-gst-summary': {
+    title: 'Master GST Summary',
+    description: 'A consolidated overview of all GST activity — output tax collected, input tax credits, and net liability.',
+    includes: [
+      'Total taxable sales (CGST + SGST + IGST)',
+      'Total purchases eligible for ITC',
+      'Net GST payable (Output − Input)',
+      'RCM liability summary',
+      'Month-wise and rate-wise breakdown',
+    ],
+    calculation: 'Aggregates all checkout revenue (room, food, service) grouped by tax rate. Input tax is pulled from purchase orders. Net = Output GST − ITC claimed.',
+    use: "Use to get a bird\u2019s-eye view before filing GST returns. Helps identify how much tax you owe for the period.",
+    filingRef: 'Summary for GSTR-3B filing',
+    keyFields: ['Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Output Tax', 'Total ITC', 'Net Payable'],
+  },
+  'gstr-1-sales': {
+    title: 'Sales / GSTR-1 Report (B2B)',
+    description: 'Lists all B2B taxable sales made to registered businesses. Required for filing GSTR-1.',
+    includes: [
+      'Invoice-wise sales to GST-registered customers',
+      'Customer GSTIN, invoice number, date, taxable value',
+      'CGST, SGST, IGST split per invoice',
+      'Exempt and nil-rated supplies',
+    ],
+    calculation: 'Pulls all checkout invoices where guest GSTIN is recorded. Groups by invoice and calculates tax at the applicable slab rate (e.g., 12% = 6% CGST + 6% SGST).',
+    use: 'This is your outward supply register. Directly used for GSTR-1 filing with the GST portal on the 11th of each month.',
+    filingRef: 'GSTR-1 (Table 4A – B2B Invoices)',
+    keyFields: ['GSTIN of Recipient', 'Invoice No.', 'Invoice Date', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax'],
+  },
+  'itc-register': {
+    title: 'Purchases / ITC Register',
+    description: 'Records all inward supplies (purchases) on which Input Tax Credit (ITC) can be claimed.',
+    includes: [
+      'Vendor name and GSTIN',
+      'Invoice number, date, and amount',
+      'CGST, SGST, IGST paid to vendor',
+      'Eligible ITC vs. blocked credit (e.g., personal use items)',
+      'GSTR-2B reconciliation status',
+    ],
+    calculation: 'Pulls all purchase orders with vendor invoices. Tax amounts are as entered during purchase. Reconciled against GSTR-2B data from the GST portal.',
+    use: "Use to claim Input Tax Credit in GSTR-3B. Ensures you only claim ITC that is reflected in your vendor\u2019s GSTR-1.",
+    filingRef: 'GSTR-3B (Table 4 – ITC available)',
+    keyFields: ['Vendor GSTIN', 'Invoice No.', 'Purchase Date', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Eligible ITC'],
+  },
+  'rcm-register': {
+    title: 'RCM Register (Reverse Charge Mechanism)',
+    description: 'Tracks purchases from unregistered vendors or notified categories where GST must be paid by you (the recipient).',
+    includes: [
+      'Unregistered vendor invoices',
+      'GST amount self-assessed and payable',
+      'Category of supply triggering RCM',
+      'Payment date and period',
+    ],
+    calculation: 'Identifies purchase entries marked as RCM. Tax is calculated at the applicable rate on the taxable value. This becomes a payable in your GSTR-3B.',
+    use: 'RCM amounts must be declared and paid in GSTR-3B even though the vendor did not charge GST. ITC on RCM can be claimed in the same month of payment.',
+    filingRef: 'GSTR-3B (Table 3.1d – Inward under RCM) and Table 4A(2) for ITC',
+    keyFields: ['Vendor Name', 'Invoice No.', 'Date', 'Supply Category', 'Taxable Value', 'RCM Tax Payable', 'ITC Eligible'],
+  },
+};
+
+// ============================================
+// GST INFO MODAL COMPONENT
+// ============================================
+
+const GstInfoModal = ({ report, onClose }) => {
+  const info = GST_REPORT_INFO[report?.id];
+  if (!info) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-5 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2">
+              <Info className="h-5 w-5 text-white" />
+            </div>
+            <h2 className="text-lg font-bold text-white">{info.title}</h2>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+          <p className="text-gray-700 text-sm leading-relaxed">{info.description}</p>
+
+          {/* What it includes */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-600 mb-2">What This Report Includes</h4>
+            <ul className="space-y-1">
+              {info.includes.map((item, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                  <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* How it calculates */}
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-700 mb-2">How It's Calculated</h4>
+            <p className="text-sm text-amber-800 leading-relaxed">{info.calculation}</p>
+          </div>
+
+          {/* Key fields */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Key Fields</h4>
+            <div className="flex flex-wrap gap-2">
+              {info.keyFields.map((f, i) => (
+                <span key={i} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">{f}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Filing reference */}
+          <div className="bg-green-50 border border-green-100 rounded-xl p-4">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-green-700 mb-1">Purpose &amp; Filing Use</h4>
+            <p className="text-sm text-green-800 mb-1">{info.use}</p>
+            <span className="inline-block text-xs font-semibold bg-green-100 text-green-800 px-2 py-1 rounded-full mt-1">
+              📋 {info.filingRef}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
@@ -197,6 +335,7 @@ export default function ComprehensiveReport() {
   const [error, setError] = useState(null);
   const [reportData, setReportData] = useState(null);
   const [filters, setFilters] = useState({});
+  const [infoModal, setInfoModal] = useState(null); // GST info modal
 
   // Report definitions organized by department
   const reportDefinitions = {
@@ -1598,21 +1737,41 @@ export default function ComprehensiveReport() {
 
             {/* Reports List */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {reportDefinitions[activeTab]?.map((report) => (
-                <motion.div
-                  key={report.id}
-                  onClick={() => handleReportSelect(report)}
-                  className="bg-white rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg transition-shadow border-2 border-transparent hover:border-indigo-300"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="flex items-center gap-3 mb-2">
-                    <report.icon className="h-6 w-6 text-indigo-600" />
-                    <h3 className="font-semibold text-gray-800">{report.name}</h3>
-                  </div>
-                  <p className="text-sm text-gray-500 mt-2">Click to view report</p>
-                </motion.div>
-              ))}
+              {reportDefinitions[activeTab]?.map((report) => {
+                const hasInfo = activeTab === 'gst' && GST_REPORT_INFO[report.id];
+                return (
+                  <motion.div
+                    key={report.id}
+                    className="bg-white rounded-lg shadow-md p-6 cursor-pointer hover:shadow-lg transition-shadow border-2 border-transparent hover:border-indigo-300 relative"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleReportSelect(report)}
+                  >
+                    {/* Info button for GST reports */}
+                    {hasInfo && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setInfoModal(report); }}
+                        title="Report Information"
+                        className="absolute top-3 right-3 p-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-indigo-500 hover:text-indigo-700 transition-colors"
+                      >
+                        <Info className="h-4 w-4" />
+                      </button>
+                    )}
+                    <div className="flex items-center gap-3 mb-2">
+                      <report.icon className="h-6 w-6 text-indigo-600" />
+                      <h3 className="font-semibold text-gray-800 pr-6">{report.name}</h3>
+                    </div>
+                    <p className="text-sm text-gray-500 mt-2">
+                      {hasInfo ? GST_REPORT_INFO[report.id].description.slice(0, 70) + '…' : 'Click to view report'}
+                    </p>
+                    {hasInfo && (
+                      <span className="inline-flex items-center gap-1 mt-3 text-xs text-indigo-600 font-medium">
+                        <Info className="h-3 w-3" /> {GST_REPORT_INFO[report.id].filingRef}
+                      </span>
+                    )}
+                  </motion.div>
+                );
+              })}
             </div>
 
           </div>
@@ -1624,6 +1783,16 @@ export default function ComprehensiveReport() {
               <div className="flex items-center gap-3 mb-4">
                 <activeReport.icon className="h-8 w-8 text-indigo-600" />
                 <h2 className="text-2xl font-bold text-gray-800">{activeReport.name}</h2>
+                {/* Info button in detail header for GST reports */}
+                {GST_REPORT_INFO[activeReport.id] && (
+                  <button
+                    onClick={() => setInfoModal(activeReport)}
+                    className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-sm font-medium transition-colors"
+                  >
+                    <Info className="h-4 w-4" />
+                    About this report
+                  </button>
+                )}
               </div>
 
               {/* Filters */}
@@ -1660,6 +1829,11 @@ export default function ComprehensiveReport() {
           </div>
         )}
       </div>
+
+      {/* GST Info Modal */}
+      {infoModal && (
+        <GstInfoModal report={infoModal} onClose={() => setInfoModal(null)} />
+      )}
     </DashboardLayout>
   );
 }

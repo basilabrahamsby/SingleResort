@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../providers/attendance_provider.dart';
 import '../providers/auth_provider.dart';
@@ -46,7 +47,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
             // Big Clock In/Out Button
             GestureDetector(
-              onTap: provider.isLoading ? null : () => provider.toggleAttendance(),
+              onTap: provider.isLoading ? null : () {
+                if (!provider.isClockedIn) {
+                  _showTaskChecklist(context, provider, user?.employeeId, true);
+                } else {
+                  _showTaskChecklist(context, provider, user?.employeeId, false);
+                }
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
                 width: 200,
@@ -115,6 +122,133 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showTaskChecklist(BuildContext context, AttendanceProvider provider, int? employeeId, bool isClockIn) {
+    if (employeeId == null) {
+      if (isClockIn) {
+        provider.clockIn(-1); 
+      } else {
+        provider.clockOut(-1);
+      }
+      return;
+    }
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final tasks = authProvider.dailyTasks;
+
+    if (tasks.isEmpty) {
+      // No tasks, proceed directly
+      if (isClockIn) {
+        provider.clockIn(employeeId);
+      } else {
+        provider.clockOut(employeeId);
+      }
+      return;
+    }
+
+    // Clone the completed tasks from backend log if checking out
+    List<String> currentCompleted = isClockIn 
+        ? [] 
+        : List<String>.from(provider.completedTasks);
+    
+    // Check if we even need to show this if already everything is done?
+    // User requested "compulsary complete this task in clock in and clock out"
+    // So we show the dialog no matter what.
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            bool allChecked = true;
+            for (String t in tasks) {
+              if (!currentCompleted.contains(t)) {
+                allChecked = false;
+                break;
+              }
+            }
+
+            return AlertDialog(
+              title: Text(isClockIn ? 'Pre-Shift Task Acknowledgment' : 'End-Shift Task Completion'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isClockIn 
+                          ? 'Please acknowledge your assigned tasks for today before clocking in.'
+                          : 'Please confirm completion of all your daily tasks before clocking out.',
+                      style: TextStyle(color: Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: tasks.length,
+                        itemBuilder: (context, index) {
+                          final task = tasks[index];
+                          final isChecked = currentCompleted.contains(task);
+                          return CheckboxListTile(
+                            title: Text(task),
+                            value: isChecked,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val == true) {
+                                  currentCompleted.add(task);
+                                } else {
+                                  currentCompleted.remove(task);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: allChecked ? () async {
+                    Navigator.pop(context); // Close dialog
+
+                    // Update backend if checking out or just update immediately
+                    if (!isClockIn && provider.activeLogId != null) {
+                      try {
+                        await Provider.of<ApiService>(context, listen: false).updateWorkLogTasks(
+                          provider.activeLogId!,
+                          currentCompleted,
+                        );
+                      } catch (e) {
+                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save tasks: $e')));
+                         return;
+                      }
+                    }
+
+                    if (isClockIn) {
+                      provider.clockIn(employeeId);
+                    } else {
+                      provider.clockOut(employeeId);
+                    }
+                  } : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: allChecked ? Colors.green : Colors.grey,
+                  ),
+                  child: Text(isClockIn ? 'Acknowledge & Clock In' : 'Complete & Clock Out', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -4,6 +4,7 @@ import 'package:orchid_employee/core/constants/app_constants.dart';
 import 'package:orchid_employee/core/constants/api_constants.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:jwt_decoder/jwt_decoder.dart'; // We might need this, or just decode manually
+import 'dart:convert';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 enum UserRole { manager, housekeeping, kitchen, waiter, maintenance, unknown }
@@ -18,6 +19,7 @@ class AuthProvider extends ChangeNotifier {
   String? _userImage;
   int? _employeeId;
   int? _userId;
+  List<String> _dailyTasks = [];
 
   AuthStatus get status => _status;
   UserRole get role => _role;
@@ -25,6 +27,7 @@ class AuthProvider extends ChangeNotifier {
   String? get userImage => _userImage;
   int? get employeeId => _employeeId;
   int? get userId => _userId;
+  List<String> get dailyTasks => _dailyTasks;
 
   AuthProvider(this._apiService) {
     _apiService.onUnauthorized = logout;
@@ -77,6 +80,7 @@ class AuthProvider extends ChangeNotifier {
     _userImage = null;
     _employeeId = null;
     _userId = null;
+    _dailyTasks = [];
     notifyListeners();
   }
 
@@ -121,12 +125,25 @@ class AuthProvider extends ChangeNotifier {
               _employeeId = empData['id'];
               _userName = empData['name'];
               _userImage = empData['image_url'];
-              print("Patched Employee Profile via /me: $_userName, EMID:$_employeeId, Image:$_userImage");
+              
+              if (empData['daily_tasks'] != null) {
+                try {
+                  List<dynamic> parsed = jsonDecode(empData['daily_tasks']);
+                  _dailyTasks = parsed.map((e) => e.toString()).toList();
+                } catch (_) {
+                  _dailyTasks = [empData['daily_tasks'].toString()];
+                }
+              } else {
+                _dailyTasks = [];
+              }
+              
+              print("Patched Employee Profile via /me: $_userName, EMID:$_employeeId, Image:$_userImage, Tasks:${_dailyTasks.length}");
               notifyListeners();
           } else {
               // Fallback if no employee record but we have user data
               _userId = data['id'];
               _userName = data['email'];
+              _dailyTasks = [];
               print("User logged in but no employee record found for ID: $_userId");
           }
       }

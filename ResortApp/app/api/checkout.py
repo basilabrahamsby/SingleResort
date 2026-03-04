@@ -2866,8 +2866,14 @@ def _calculate_bill_for_single_room(db: Session, room_number: str):
     billed_services = [ass for ass in all_assigned_services if ass.billing_status == "billed"]
     
     # Calculate charges: only unbilled items contribute to charges
+    from app.utils.food_pricing import get_food_item_price_at_time
+    
     charges.food_charges = sum(
-        (item.quantity * item.food_item.price) 
+        (item.quantity * get_food_item_price_at_time(
+            item.food_item, 
+            item.order.created_at if item.order else None,
+            item.order.order_type if item.order else "dine_in"
+        )) 
         if (item.food_item and (not item.order or (item.order.amount or 0) > 0)) else 0 
         for item in unbilled_food_order_items
     )
@@ -2882,7 +2888,14 @@ def _calculate_bill_for_single_room(db: Session, room_number: str):
         if item.food_item:
             # Check if order is complimentary (amount is 0)
             is_complimentary = item.order and item.order.amount == 0
-            item_amount = 0.0 if is_complimentary else (item.quantity * item.food_item.price)
+            
+            # Use same pricing logic for breakdown
+            current_item_price = get_food_item_price_at_time(
+                item.food_item, 
+                item.order.created_at if item.order else None,
+                item.order.order_type if item.order else "dine_in"
+            )
+            item_amount = 0.0 if is_complimentary else (item.quantity * current_item_price)
             
             charges.food_items.append({
                 "item_name": item.food_item.name, 

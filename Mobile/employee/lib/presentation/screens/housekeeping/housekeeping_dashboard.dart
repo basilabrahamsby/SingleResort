@@ -14,6 +14,10 @@ import 'package:orchid_employee/presentation/providers/attendance_provider.dart'
 import 'package:intl/intl.dart';
 import 'package:orchid_employee/presentation/widgets/skeleton_loaders.dart';
 import 'checkout_verification_dialog.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:orchid_employee/data/models/service_request_model.dart';
+
+import 'service_request_dialogs.dart';
 
 class HousekeepingDashboard extends StatefulWidget {
   const HousekeepingDashboard({super.key});
@@ -30,18 +34,18 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
     super.initState();
     // Fetch initial data
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final empId = context.read<AuthProvider>().employeeId;
       context.read<RoomProvider>().fetchRooms();
       context.read<ServiceRequestProvider>().fetchRequests();
-      final empId = context.read<AuthProvider>().employeeId;
       context.read<AttendanceProvider>().checkTodayStatus(empId);
     });
     
     // Auto-refresh every 30 seconds
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) {
+        final empId = context.read<AuthProvider>().employeeId;
         context.read<ServiceRequestProvider>().fetchRequests();
         context.read<RoomProvider>().fetchRooms();
-        final empId = context.read<AuthProvider>().employeeId;
         if (empId != null && empId != 0) {
            context.read<AttendanceProvider>().checkTodayStatus(empId);
         }
@@ -60,6 +64,41 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
       context.read<RoomProvider>().fetchRooms(),
       context.read<ServiceRequestProvider>().fetchRequests(),
     ]);
+  }
+
+  Future<Position?> _getCurrentLocation() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    try {
+      // Test if location services are enabled.
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        return null;
+      }
+
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          return null;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        return null;
+      }
+
+      // When we reach here, permissions are granted and we can
+      // continue accessing the position of the device.
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5),
+      );
+    } catch (e) {
+      print("Location error: $e");
+      return null;
+    }
   }
 
   @override
@@ -92,24 +131,20 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
       if (r.status.toLowerCase() != 'completed') return false;
       if (r.completedAt == null) return false;
       
-      // Convert both to UTC for comparison to handle timezone differences
-      // Backend stores in UTC, so we need to compare UTC dates
-      final nowUtc = DateTime.now().toUtc();
-      final todayUtc = DateTime(nowUtc.year, nowUtc.month, nowUtc.day);
-      
-      // completedAt is already in UTC from the backend
-      final completedAtUtc = r.completedAt!.isUtc ? r.completedAt! : r.completedAt!.toUtc();
-      final completedDateUtc = DateTime(
-        completedAtUtc.year,
-        completedAtUtc.month,
-        completedAtUtc.day,
+      // Convert completedAt to local time to correctly check if it happened today
+      // from the user's perspective.
+      final completedLocal = r.completedAt!.toLocal();
+      final completedDate = DateTime(
+        completedLocal.year,
+        completedLocal.month,
+        completedLocal.day,
       );
       
-      final isToday = completedDateUtc == todayUtc;
+      final isToday = completedDate == today;
       
       // Debug logging
       if (r.status.toLowerCase() == 'completed') {
-        print('[DEBUG] Service ${r.id}: status=${r.status}, completedAt=${r.completedAt}, completedAtUtc=$completedDateUtc, todayUtc=$todayUtc, isToday=$isToday');
+        print('[DEBUG] Service ${r.id}: status=${r.status}, completedLocal=$completedDate, today=$today, isToday=$isToday');
       }
       
       return isToday;
@@ -136,36 +171,47 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
               // Header with Stats
               SliverToBoxAdapter(
                 child: Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.fromLTRB(20, 30, 20, 30),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
+                      colors: [AppColors.primary, AppColors.primary.withAlpha(200)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(30),
+                      bottomRight: Radius.circular(30),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.3),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      )
+                    ]
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         "Today's Progress",
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           _StatCard(
-                            icon: Icons.check_circle,
+                            icon: Icons.task_alt_rounded,
                             value: "$completedToday",
                             label: "Completed",
-                            color: Colors.green,
+                            color: Colors.greenAccent,
                           ),
                           const SizedBox(width: 16),
                           _StatCard(
-                            icon: Icons.pending_actions,
+                            icon: Icons.pending_actions_rounded,
                             value: "$pendingTasks",
                             label: "Pending",
-                            color: Colors.orange,
+                            color: Colors.orangeAccent,
                           ),
                         ],
                       ),
@@ -233,17 +279,17 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
                      final minutes = duration.inMinutes.remainder(60);
 
                      return Container(
-                       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                       margin: const EdgeInsets.fromLTRB(16, 24, 16, 8),
                        padding: const EdgeInsets.all(20),
                        decoration: BoxDecoration(
                          color: Colors.white,
-                         borderRadius: BorderRadius.circular(16),
+                         borderRadius: BorderRadius.circular(20),
                          border: Border.all(
                             color: isClockedIn ? Colors.green.withOpacity(0.3) : Colors.red.withOpacity(0.1),
                             width: 1.5
                          ),
                          boxShadow: [
-                           BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
+                           BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
                          ],
                        ),
                        child: Column(
@@ -252,13 +298,13 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
                              children: [
                                // Status Icon
                                Container(
-                                 padding: const EdgeInsets.all(12),
+                                 padding: const EdgeInsets.all(14),
                                  decoration: BoxDecoration(
                                    color: isClockedIn ? Colors.green[50] : Colors.red[50],
                                    shape: BoxShape.circle,
                                  ),
                                  child: Icon(
-                                   isClockedIn ? Icons.timer : Icons.timer_off,
+                                   isClockedIn ? Icons.access_time_filled_rounded : Icons.timer_off_rounded,
                                    color: isClockedIn ? Colors.green : Colors.red,
                                    size: 28,
                                  ),
@@ -310,7 +356,96 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
                                      }
                                      
                                      if (val) {
-                                       await attendance.clockIn(empId);
+                                       Position? position = await _getCurrentLocation();
+                                       final tasks = auth.dailyTasks;
+
+                                       if (tasks.isEmpty) {
+                                         await attendance.clockIn(
+                                           empId, 
+                                           latitude: position?.latitude, 
+                                           longitude: position?.longitude,
+                                         );
+                                       } else {
+                                         List<String> currentCompleted = [];
+                                         showDialog(
+                                           context: context,
+                                           barrierDismissible: false,
+                                           builder: (context) {
+                                             return StatefulBuilder(
+                                               builder: (context, setDialogState) {
+                                                 bool allChecked = true;
+                                                 for (String t in tasks) {
+                                                   if (!currentCompleted.contains(t)) {
+                                                     allChecked = false;
+                                                     break;
+                                                   }
+                                                 }
+
+                                                 return AlertDialog(
+                                                   title: const Text('Pre-Shift Task Check'),
+                                                   content: SizedBox(
+                                                     width: double.maxFinite,
+                                                     child: Column(
+                                                       mainAxisSize: MainAxisSize.min,
+                                                       children: [
+                                                         Text(
+                                                           'Please acknowledge your assigned daily tasks for today before starting.',
+                                                           style: TextStyle(color: Colors.grey.shade700),
+                                                         ),
+                                                         const SizedBox(height: 16),
+                                                         Flexible(
+                                                           child: ListView.builder(
+                                                             shrinkWrap: true,
+                                                             itemCount: tasks.length,
+                                                             itemBuilder: (context, index) {
+                                                               final task = tasks[index];
+                                                               final isChecked = currentCompleted.contains(task);
+                                                               return CheckboxListTile(
+                                                                 title: Text(task),
+                                                                 value: isChecked,
+                                                                 onChanged: (checkVal) {
+                                                                   setDialogState(() {
+                                                                     if (checkVal == true) {
+                                                                       currentCompleted.add(task);
+                                                                     } else {
+                                                                       currentCompleted.remove(task);
+                                                                     }
+                                                                   });
+                                                                 },
+                                                               );
+                                                             },
+                                                           ),
+                                                         ),
+                                                       ],
+                                                     ),
+                                                   ),
+                                                   actions: [
+                                                     TextButton(
+                                                       onPressed: () => Navigator.pop(context),
+                                                       child: const Text('Cancel'),
+                                                     ),
+                                                     ElevatedButton(
+                                                       onPressed: allChecked ? () async {
+                                                         Navigator.pop(context);
+                                                         await attendance.clockIn(
+                                                           empId, 
+                                                           latitude: position?.latitude, 
+                                                           longitude: position?.longitude,
+                                                           tasksToSync: currentCompleted,
+                                                         );
+                                                       } : null,
+                                                       style: ElevatedButton.styleFrom(
+                                                         backgroundColor: allChecked ? Colors.green : Colors.grey,
+                                                       ),
+                                                       child: const Text('Acknowledge & Clock In', style: TextStyle(color: Colors.white)),
+                                                     ),
+                                                   ],
+                                                 );
+                                               },
+                                             );
+                                           },
+                                         );
+                                       }
                                      } else {
                                         // Confirm Clock Out
                                         final confirm = await showDialog<bool>(
@@ -470,20 +605,29 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
                                    context: context,
                                    builder: (_) => CheckoutVerificationDialog(
                                      roomNumber: request.roomNumber,
-                                     onSuccess: () => context.read<ServiceRequestProvider>().updateRequestStatus(request.id, 'completed'),
+                                     onSuccess: () => context.read<ServiceRequestProvider>().updateRequestStatus(request.id, 'completed', employeeId: context.read<AuthProvider>().employeeId),
                                    )
                                  );
                                  return;
                               }
 
+                              final isFood = request.type.toLowerCase().contains('food') || 
+                                             request.description.toLowerCase().contains('food') ||
+                                             request.type.toLowerCase() == 'delivery';
+
                               showDialog(
                                 context: context,
-                                builder: (_) => _CompleteServiceDialog(
+                                builder: (_) => CompleteServiceDialog(
                                    requestId: request.id,
                                    roomNumber: request.roomNumber,
                                    refillItems: request.refillItems,
-                                   onJustComplete: () => requestProvider.updateRequestStatus(request.id, 'completed'),
-                                   onReturn: (items, destId) async {
+                                    isFoodService: isFood,
+                                    currentBillingStatus: request.billingStatus,
+                                    foodOrderAmount: request.foodOrderAmount,
+                                    foodOrderGst: request.foodOrderGst,
+                                    foodOrderTotal: request.foodOrderTotal,
+                                    onJustComplete: (billingStatus) => requestProvider.updateRequestStatus(request.id, 'completed', employeeId: context.read<AuthProvider>().employeeId, billingStatus: billingStatus),
+                                   onReturn: (items, destId, billingStatus) async {
                                       final provider = context.read<InventoryProvider>();
                                       final locs = provider.locations;
                                       
@@ -512,7 +656,7 @@ class _HousekeepingDashboardState extends State<HousekeepingDashboard> {
                                          }).toList(),
                                          notes: "Return from Service Request #${request.id}"
                                       );
-                                      requestProvider.updateRequestStatus(request.id, 'completed');
+                                       requestProvider.updateRequestStatus(request.id, 'completed', employeeId: context.read<AuthProvider>().employeeId, billingStatus: billingStatus);
                                    }
                                 )
                               );
@@ -604,14 +748,22 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(12),
+          color: Colors.white.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.2)),
         ),
         child: Row(
           children: [
-            Icon(icon, color: color, size: 32),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 28),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -621,14 +773,14 @@ class _StatCard extends StatelessWidget {
                     value,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
                     label,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -660,16 +812,17 @@ class _UrgentRoomCard extends StatelessWidget {
     final isCleaning = status == 'cleaning';
     
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade100),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -816,12 +969,19 @@ class _ServiceRequestCard extends StatelessWidget {
     final isPending = request.status.toLowerCase() == 'pending';
     
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.orange.withOpacity(0.3), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -829,10 +989,10 @@ class _ServiceRequestCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: Colors.orange[50],
-                  borderRadius: BorderRadius.circular(8),
+                  shape: BoxShape.circle,
                 ),
                 child: Icon(Icons.room_service, color: Colors.orange[700]),
               ),
@@ -870,16 +1030,49 @@ class _ServiceRequestCard extends StatelessWidget {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: () {
+                      print("==> Accept & Start clicked for req ${request.id}, type=${request.type}, desc=${request.description}");
                       // Check for pending first
-                      if (!isPending) return;
+                      if (!isPending) {
+                          print("==> isPending is false, returning.");
+                          return;
+                      }
 
                       if (!context.read<AttendanceProvider>().isClockedIn) {
+                         print("==> Not clocked in.");
                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Action Denied: You must Clock In first")));
                          return;
                       }
+
+                      final isFoodService = request.type.toLowerCase().contains('food') || 
+                                            request.description.toLowerCase().contains('food') ||
+                                            request.type.toLowerCase() == 'delivery';
+
+                      print("==> isFoodService = $isFoodService");
+
+                       if (isFoodService) {
+                          showDialog(
+                            context: context,
+                            builder: (_) => DeliveryStartDialog(
+                              request: request,
+                              onConfirm: () {
+                                if (context.mounted) {
+                                  final empId = context.read<AuthProvider>().employeeId;
+                                  context.read<ServiceRequestProvider>().updateRequestStatus(request.id, 'in_progress', employeeId: empId).then((success) {
+                                      print("==> updateRequestStatus returned $success");
+                                  }).catchError((e) {
+                                      print("==> updateRequestStatus threw error: $e");
+                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+                                  });
+                                }
+                              },
+                            ),
+                          );
+                          return;
+                       }
+
                       showDialog(
                         context: context,
-                        builder: (_) => _PickInventoryDialog(
+                        builder: (_) => PickInventoryDialog(
                           requestId: request.id,
                           roomNumber: request.roomNumber,
                           preAssignedItems: request.refillItems,
@@ -905,7 +1098,8 @@ class _ServiceRequestCard extends StatelessWidget {
                               }
                             }
                             if (context.mounted) {
-                               await context.read<ServiceRequestProvider>().updateRequestStatus(request.id, 'in_progress');
+                               final empId = context.read<AuthProvider>().employeeId;
+                               await context.read<ServiceRequestProvider>().updateRequestStatus(request.id, 'in_progress', employeeId: empId);
                             }
                           },
                         ),
@@ -928,7 +1122,7 @@ class _ServiceRequestCard extends StatelessWidget {
                   child: ElevatedButton.icon(
                     onPressed: () {
                       final provider = context.read<ServiceRequestProvider>();
-                      provider.updateRequestStatus(request.id, 'cancelled');
+                      provider.updateRequestStatus(request.id, 'cancelled', employeeId: context.read<AuthProvider>().employeeId);
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
@@ -967,575 +1161,5 @@ class _ServiceRequestCard extends StatelessWidget {
   }
 }
 
-class _PickInventoryDialog extends StatefulWidget {
-  final String requestId;
-  final String roomNumber;
-  final List<dynamic> preAssignedItems;
-  final Function(List<Map<String, dynamic>> items) onStart;
 
-  const _PickInventoryDialog({
-    super.key,
-    required this.requestId,
-    required this.roomNumber,
-    this.preAssignedItems = const [],
-    required this.onStart,
-  });
 
-  @override
-  State<_PickInventoryDialog> createState() => _PickInventoryDialogState();
-}
-
-class _PickInventoryDialogState extends State<_PickInventoryDialog> {
-  // Removed global location id
-  final List<Map<String, dynamic>> _selectedItems = [];
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<InventoryProvider>().fetchLocations();
-      context.read<InventoryProvider>().fetchSellableItems().then((_) {
-        if (mounted && widget.preAssignedItems.isNotEmpty) {
-           _populatePreAssignedItems();
-        }
-      });
-    });
-  }
-
-  void _populatePreAssignedItems() {
-    final invProvider = context.read<InventoryProvider>();
-    final allItems = invProvider.allItems;
-    final defaultLocId = invProvider.locations.isNotEmpty ? invProvider.locations.first['id'] : null;
-
-    for (var pre in widget.preAssignedItems) {
-      final itemId = pre['item_id'];
-      final qty = pre['quantity'];
-      if (itemId != null) {
-        try {
-          final item = allItems.firstWhere((i) => i.id == itemId);
-          setState(() {
-            _selectedItems.add({
-              'item_id': item.id,
-              'quantity': qty,
-              'name': item.name,
-              'unit': item.unit,
-              'location_id': defaultLocId,
-            });
-          });
-        } catch (_) {}
-      }
-    }
-  }
-
-  void _addItem() {
-    final invProvider = context.read<InventoryProvider>();
-    final defaultLocId = invProvider.locations.isNotEmpty ? invProvider.locations.first['id'] : null;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => _ItemPickerDialog(
-        onPick: (item, qty) {
-          setState(() {
-            _selectedItems.add({
-              'item_id': item.id,
-              'quantity': qty,
-              'name': item.name,
-              'unit': item.unit,
-              'location_id': defaultLocId,
-            });
-          });
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final invProvider = context.watch<InventoryProvider>();
-    
-    return AlertDialog(
-      title: Text("Start Service for Room ${widget.roomNumber}"),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("Pick inventory items (optional):", style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            if (invProvider.isLoading && invProvider.locations.isEmpty)
-              const Center(child: CircularProgressIndicator())
-            else 
-              if (_selectedItems.isNotEmpty)
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 300),
-                  decoration: BoxDecoration(border: Border.all(color: Colors.grey[300]!)),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _selectedItems.length,
-                    itemBuilder: (ctx, i) {
-                      final item = _selectedItems[i];
-                      return ListTile(
-                        isThreeLine: true,
-                        dense: true,
-                        title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.w500)),
-                        subtitle: DropdownButton<int>(
-                           value: item['location_id'],
-                           isDense: true,
-                           underline: Container(), // Remove underline
-                           hint: const Text("Select Loc", style: TextStyle(fontSize: 12)),
-                           items: invProvider.locations.map<DropdownMenuItem<int>>((loc) {
-                             return DropdownMenuItem<int>(
-                               value: loc['id'],
-                               child: Text(loc['name'] ?? 'Loc #${loc['id']}', style: const TextStyle(fontSize: 12)),
-                             );
-                           }).toList(),
-                           onChanged: (val) {
-                              setState(() {
-                                 item['location_id'] = val;
-                              });
-                           }
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text("${item['quantity']} ${item['unit'] ?? ''}", style: const TextStyle(fontSize: 13)),
-                            const SizedBox(width: 4),
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle, color: Colors.red, size: 20),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () => setState(() => _selectedItems.removeAt(i)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: OutlinedButton.icon(
-                    onPressed: _addItem,
-                    icon: const Icon(Icons.add),
-                    label: const Text("Add Extra Item"),
-                  ),
-                ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () {
-             Navigator.pop(context);
-             widget.onStart([]); // Skip inventory
-          },
-          child: const Text("Skip Inventory"),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            // Check if any item has missing location
-            if (_selectedItems.isNotEmpty && _selectedItems.any((i) => i['location_id'] == null)) {
-               ScaffoldMessenger.of(context).showSnackBar(
-                 const SnackBar(content: Text("Please select a location for all items")),
-               );
-               return;
-            }
-            Navigator.pop(context);
-            widget.onStart(_selectedItems);
-          },
-          child: const Text("Confirm & Start"),
-        ),
-      ],
-    );
-  }
-}
-
-class _ItemPickerDialog extends StatefulWidget {
-  final Function(InventoryItem, double) onPick;
-  const _ItemPickerDialog({super.key, required this.onPick});
-
-  @override
-  State<_ItemPickerDialog> createState() => _ItemPickerDialogState();
-}
-
-class _ItemPickerDialogState extends State<_ItemPickerDialog> {
-  InventoryItem? _selectedItem;
-  final TextEditingController _qtyController = TextEditingController(text: "1");
-
-  @override
-  Widget build(BuildContext context) {
-    final items = context.read<InventoryProvider>().allItems;
-    
-    return AlertDialog(
-      title: const Text("Select Item"),
-      content: SingleChildScrollView(
-         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("Item Name", style: TextStyle(fontSize: 12, color: Colors.grey)),
-            Autocomplete<InventoryItem>(
-              displayStringForOption: (item) => item.name,
-              optionsBuilder: (textEditingValue) {
-                if (textEditingValue.text.isEmpty) {
-                  return const Iterable<InventoryItem>.empty();
-                }
-                return items.where((item) => item.name.toLowerCase().contains(textEditingValue.text.toLowerCase()));
-              },
-              onSelected: (item) {
-                setState(() {
-                  _selectedItem = item;
-                });
-              },
-              fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
-                return TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  onEditingComplete: onEditingComplete,
-                  decoration: const InputDecoration(
-                    hintText: "Search item...",
-                    suffixIcon: Icon(Icons.search),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _qtyController,
-              decoration: const InputDecoration(labelText: "Quantity"),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-        ElevatedButton(
-          onPressed: _selectedItem == null ? null : () {
-            final qty = double.tryParse(_qtyController.text) ?? 1.0;
-            widget.onPick(_selectedItem!, qty);
-            Navigator.pop(context);
-          },
-          child: const Text("Add"),
-        ),
-      ],
-    );
-  }
-}
-
-class _CompleteServiceDialog extends StatefulWidget {
-  final String requestId;
-  final String roomNumber;
-  final List<dynamic> refillItems;
-  final Function(List<Map<String, dynamic>> items, int? destId) onReturn;
-  final VoidCallback onJustComplete;
-
-  const _CompleteServiceDialog({
-    super.key,
-    required this.requestId,
-    required this.roomNumber,
-    this.refillItems = const [],
-    required this.onReturn,
-    required this.onJustComplete,
-  });
-
-  @override
-  State<_CompleteServiceDialog> createState() => _CompleteServiceDialogState();
-}
-
-class _CompleteServiceDialogState extends State<_CompleteServiceDialog> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final provider = context.read<InventoryProvider>();
-      
-      // Fetch items and locations first
-      await provider.fetchSellableItems();
-      if (provider.locations.isEmpty) {
-         await provider.fetchLocations();
-      }
-      
-      // Auto-populate items that were assigned (refillItems)
-      if (widget.refillItems.isNotEmpty && mounted) {
-         _populateRefillItems();
-      }
-    });
-  }
-
-  void _populateRefillItems() {
-     final allItems = context.read<InventoryProvider>().allItems;
-     final locations = context.read<InventoryProvider>().locations;
-     
-     if (allItems.isEmpty) {
-        print("Warning: allItems is empty, cannot populate refill items");
-        return;
-     }
-     
-     final List<Map<String, dynamic>> itemsToAdd = [];
-     
-     for (var ref in widget.refillItems) {
-        final iId = ref['item_id'];
-        final iQty = ref['quantity'];
-        
-        // Try to find item details
-        try {
-           final item = allItems.firstWhere((i) => i.id == iId);
-           itemsToAdd.add({
-              'item_id': item.id,
-              'name': item.name,
-              'quantity': 0, // Default return qty to 0 so user enters what they're returning
-              'unit': item.unit,
-              'assigned_quantity': iQty, // Store assigned quantity for display
-           });
-        } catch (e) {
-           print("Could not find item with id $iId: $e");
-        }
-     }
-     
-     if (itemsToAdd.isNotEmpty && mounted) {
-        setState(() {
-           _itemsToReturn = itemsToAdd;
-           _returnItems = true; // Auto-check the checkbox
-           // Set default location if available
-           if (_selectedDestId == null && locations.isNotEmpty) {
-              _selectedDestId = locations.first['id'];
-           }
-        });
-     }
-  }
-
-  bool _returnItems = false;
-  List<Map<String, dynamic>> _itemsToReturn = [];
-  int? _selectedDestId;
-
-  void _addItem() {
-    showDialog(
-      context: context,
-      builder: (_) => _ItemPickerDialog(
-        onPick: (item, qty) {
-          setState(() {
-            _itemsToReturn.add({
-              'item_id': item.id,
-              'name': item.name,
-              'quantity': qty,
-              'unit': item.unit,
-            });
-          });
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final invProvider = context.watch<InventoryProvider>();
-    final locations = invProvider.locations;
-
-    return AlertDialog(
-      title: const Text("Complete Service"),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Complete request for Room ${widget.roomNumber}?"),
-            const SizedBox(height: 16),
-            CheckboxListTile(
-              title: const Text("Return Balance Inventory Items"),
-              value: _returnItems,
-              onChanged: (val) {
-                 setState(() => _returnItems = val ?? false);
-                 if (_returnItems && _selectedDestId == null && locations.isNotEmpty) {
-                    _selectedDestId = locations.first['id'];
-                 }
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (_returnItems) ...[
-               const SizedBox(height: 16),
-               const Text("Items to Return:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-               const SizedBox(height: 12),
-               if (_itemsToReturn.isNotEmpty)
-                ..._itemsToReturn.asMap().entries.map((entry) {
-                   final i = entry.key;
-                   final item = entry.value;
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[300]!),
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.grey[50],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                item['name'],
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, color: Colors.red, size: 20),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () => setState(() => _itemsToReturn.removeAt(i)),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Service request:",
-                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text("Return Quantity:", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                                  const SizedBox(height: 4),
-                                  SizedBox(
-                                     height: 36,
-                                     child: TextFormField(
-                                        initialValue: item['quantity'].toString(),
-                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                        decoration: InputDecoration(
-                                          isDense: true,
-                                          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-                                          suffixText: item['unit'],
-                                        ),
-                                        onChanged: (val) {
-                                           final q = double.tryParse(val);
-                                           if (q != null) {
-                                              setState(() {
-                                                 item['quantity'] = q;
-                                              });
-                                           }
-                                        },
-                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text("Used Quantity (Auto):", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                                  const SizedBox(height: 4),
-                                  Container(
-                                    height: 36,
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[200],
-                                      border: Border.all(color: Colors.grey[300]!),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      "${(item['assigned_quantity'] ?? 0) - (item['quantity'] ?? 0)} ${item['unit']}",
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        if (item['assigned_quantity'] != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8.0),
-                            child: Text(
-                              "Assigned: ${item['assigned_quantity']} | Returned: ${item['quantity']} | Used: ${(item['assigned_quantity'] ?? 0) - (item['quantity'] ?? 0)}",
-                              style: TextStyle(fontSize: 10, color: Colors.grey[600], fontStyle: FontStyle.italic),
-                            ),
-                          ),
-                        const Text("Return Location for this Item:", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
-                        const SizedBox(height: 4),
-                        DropdownButtonFormField<int>(
-                          value: _selectedDestId,
-                          decoration: InputDecoration(
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(4)),
-                          ),
-                          items: locations.map<DropdownMenuItem<int>>((loc) {
-                            return DropdownMenuItem<int>(
-                              value: loc['id'],
-                              child: Text(loc['name'] ?? 'Loc #${loc['id']}', style: const TextStyle(fontSize: 12)),
-                            );
-                          }).toList(),
-                          onChanged: (val) => setState(() => _selectedDestId = val),
-                          isExpanded: true,
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-               
-               Padding(
-                 padding: const EdgeInsets.only(top: 8.0),
-                 child: OutlinedButton.icon(
-                   onPressed: _addItem,
-                   icon: const Icon(Icons.add),
-                   label: const Text("Add Extra Inventory Items"),
-                 ),
-               ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
-        ),
-        if (_returnItems)
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              widget.onJustComplete();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.grey[600],
-            ),
-            child: const Text("Complete Without Returns"),
-          ),
-        ElevatedButton(
-          onPressed: () {
-            if (_returnItems) {
-               if (_selectedDestId == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Select return location")));
-                  return;
-               }
-               if (_itemsToReturn.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Add items to return or uncheck the box")));
-                  return;
-               }
-               Navigator.pop(context);
-               widget.onReturn(_itemsToReturn, _selectedDestId);
-            } else {
-               Navigator.pop(context);
-               widget.onJustComplete();
-            }
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
-          ),
-          child: Text(_returnItems ? "Complete & Return Items" : "Complete"),
-        ),
-      ],
-    );
-  }
-}

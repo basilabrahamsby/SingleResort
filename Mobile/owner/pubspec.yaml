@@ -36,13 +36,14 @@ dependencies:
   cupertino_icons: ^1.0.8
   provider: ^6.1.1
   dio: ^5.4.0
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^10.0.0
   shared_preferences: ^2.2.2
-  intl: ^0.19.0
-  google_fonts: ^6.1.0
-  fl_chart: ^0.66.0
+  intl: ^0.20.2
+  google_fonts: ^8.0.2
+  fl_chart: ^1.1.1
   loading_animation_widget: ^1.2.0
-  local_auth: ^2.1.8 # For Biometric Login
+  local_auth: ^3.0.0 # For Biometric Login
+  geolocator: ^13.0.2
 
 dev_dependencies:
   flutter_test:
@@ -53,7 +54,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.3
 
 flutter_launcher_icons:

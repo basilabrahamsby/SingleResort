@@ -5,14 +5,28 @@ import 'package:dio/dio.dart';
 class ExpenseProvider with ChangeNotifier {
   final ApiService _apiService;
   List<dynamic> _expenses = [];
+  Map<String, dynamic>? _budgetAnalysis;
   bool _isLoading = false;
   String? _error;
 
   ExpenseProvider(this._apiService);
 
   List<dynamic> get expenses => _expenses;
+  Map<String, dynamic>? get budgetAnalysis => _budgetAnalysis;
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  Future<void> fetchBudgetAnalysis() async {
+    try {
+      final response = await _apiService.dio.get('/expenses/budget-analysis');
+      if (response.statusCode == 200) {
+        _budgetAnalysis = response.data;
+        notifyListeners();
+      }
+    } catch (e) {
+      print("Error fetching budget analysis: $e");
+    }
+  }
 
   Future<void> fetchExpenses() async {
     _isLoading = true;

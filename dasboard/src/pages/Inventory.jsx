@@ -8830,10 +8830,18 @@ function AssetMappingFormModal({
   onClose,
   isEditing,
 }) {
-  // Filter items to show only fixed assets
+  // Filter items to show only fixed assets, excluding consumables
   const fixedAssets = items.filter((item) => {
     const category = categories.find((c) => c.id === item.category_id);
-    return item.is_asset_fixed || category?.is_asset_fixed || false;
+    const isFixed = item.is_asset_fixed || category?.is_asset_fixed || false;
+
+    // Explicitly exclude items with consumable traits even if they have fixed asset flag (prevents misconfiguration or data entry errors)
+    const isConsumable =
+      item.is_perishable || category?.is_perishable ||
+      category?.consumable_instant || category?.allow_partial_usage ||
+      item.is_sellable_to_guest || category?.is_sellable;
+
+    return isFixed && !isConsumable;
   });
 
   // Fetch detailed location stocks

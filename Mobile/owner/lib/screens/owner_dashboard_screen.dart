@@ -221,7 +221,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 _kpi("Inv Items", "${kpi.inventoryItems}", Icons.category, Colors.amber, subtitle: "${kpi.inventoryCategories} Categories", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const InventoryScreen()))),
                 _kpi("Stock Value", currencyFormat.format(kpi.totalInventoryValue), Icons.inventory, Colors.teal, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const InventoryScreen()))), 
                 _kpi("Purchases", "${kpi.purchaseCount}", Icons.shopping_cart, Colors.deepOrange, subtitle: currencyFormat.format(kpi.totalPurchases), onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PurchaseOrderScreen()))),
-                _kpi("Employees", "${kpi.activeEmployees}", Icons.people, Colors.pink, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StaffScreen()))),
+                _kpi("Staff Online", "${kpi.onlineEmployees} / ${kpi.activeEmployees}", Icons.people, Colors.pink, subtitle: "Currently On Duty", onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StaffScreen()))),
               ]),
 
               const SizedBox(height: 24),

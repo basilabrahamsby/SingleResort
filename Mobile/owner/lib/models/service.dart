@@ -32,7 +32,10 @@ class AssignedService {
   final String roomNumber;
   final String employeeName;
   final String status;
+  final String? billingStatus;
   final String assignedAt;
+  final String? startedAt;
+  final String? completedAt;
 
   AssignedService({
     required this.id,
@@ -42,19 +45,25 @@ class AssignedService {
     required this.roomNumber,
     required this.employeeName,
     required this.status,
+    this.billingStatus,
     required this.assignedAt,
+    this.startedAt,
+    this.completedAt,
   });
 
   factory AssignedService.fromJson(Map<String, dynamic> json) {
     return AssignedService(
       id: json['id'] ?? 0,
-      serviceId: json['service']?['id'] ?? 0,
-      serviceName: json['service']?['name'] ?? 'Unknown',
-      roomId: json['room']?['id'] ?? 0,
-      roomNumber: json['room']?['number'] ?? '-',
-      employeeName: json['employee']?['name'] ?? '-',
-      status: json['status'] ?? 'Pending',
-      assignedAt: json['assigned_at'] ?? '',
+      serviceId: json['service']?['id'] ?? json['service_id'] ?? 0,
+      serviceName: json['service']?['name'] ?? json['service_name'] ?? json['request_type'] ?? 'Unknown',
+      roomId: json['room']?['id'] ?? json['room_id'] ?? 0,
+      roomNumber: json['room']?['number'] ?? json['room_number'] ?? '-',
+      employeeName: json['employee']?['name'] ?? json['employee_name'] ?? '-',
+      status: json['status'] ?? 'pending',
+      billingStatus: json['billing_status'] ?? 'unbilled',
+      assignedAt: json['assigned_at'] ?? json['created_at'] ?? '',
+      startedAt: json['started_at'],
+      completedAt: json['completed_at'] ?? json['last_used_at'],
     );
   }
 }

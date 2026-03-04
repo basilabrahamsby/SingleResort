@@ -7,6 +7,28 @@ import { useInfiniteScroll } from "./useInfiniteScroll";
 import { getMediaBaseUrl } from "../utils/env";
 import { formatDateShort } from "../utils/dateUtils";
 
+const BUDGET_CATEGORIES = [
+  "Utilities",
+  "Maintenance",
+  "Salary",
+  "Food & Beverage",
+  "Marketing",
+  "Transportation",
+  "Supplies",
+  "Other",
+];
+
+const DEFAULT_BUDGETS = {
+  Utilities: 50000,
+  Maintenance: 75000,
+  Salary: 300000,
+  "Food & Beverage": 100000,
+  Marketing: 40000,
+  Transportation: 30000,
+  Supplies: 60000,
+  Other: 50000,
+};
+
 const Expenses = () => {
   const [expenses, setExpenses] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -14,6 +36,12 @@ const Expenses = () => {
   const [hoveredKPI, setHoveredKPI] = useState(null);
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  // Budget settings state
+  const [budgets, setBudgets] = useState({ ...DEFAULT_BUDGETS });
+  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [budgetSaved, setBudgetSaved] = useState(false);
+  const [showBudgetSettings, setShowBudgetSettings] = useState(false);
 
   const [form, setForm] = useState({
     employee_id: "",
@@ -41,7 +69,33 @@ const Expenses = () => {
   useEffect(() => {
     fetchEmployees();
     fetchExpenses();
+    fetchBudgets();
   }, []);
+
+  const fetchBudgets = async () => {
+    try {
+      const res = await API.get("/expenses/budgets");
+      const loaded = {};
+      (res.data.budgets || []).forEach(b => { loaded[b.category] = b.amount; });
+      setBudgets(prev => ({ ...prev, ...loaded }));
+    } catch (err) {
+      console.error("Failed to load budgets:", err);
+    }
+  };
+
+  const handleBudgetSave = async () => {
+    setBudgetSaving(true);
+    try {
+      await API.post("/expenses/budgets", { budgets });
+      setBudgetSaved(true);
+      setTimeout(() => setBudgetSaved(false), 3000);
+    } catch (err) {
+      alert("Failed to save budget settings");
+      console.error(err);
+    } finally {
+      setBudgetSaving(false);
+    }
+  };
 
   const loadMoreExpenses = useCallback(async () => {
     if (isFetchingMore || !hasMore) return;
@@ -283,6 +337,65 @@ const Expenses = () => {
             </button>
           </div>
         </form>
+      </section>
+
+      {/* Budget Settings */}
+      <section className="bg-white p-6 rounded-2xl shadow mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-700">💰 Monthly Budget Settings</h2>
+          <button
+            onClick={() => setShowBudgetSettings(s => !s)}
+            className="text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+          >
+            {showBudgetSettings ? "▲ Collapse" : "▼ Edit Budgets"}
+          </button>
+        </div>
+
+        {/* Always visible: summary chips */}
+        <div className="flex flex-wrap gap-2 mb-2">
+          {BUDGET_CATEGORIES.map(cat => (
+            <span key={cat} className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              {cat}: ₹{(budgets[cat] || 0).toLocaleString("en-IN")}
+            </span>
+          ))}
+        </div>
+
+        {/* Edit panel */}
+        {showBudgetSettings && (
+          <div className="mt-4">
+            <p className="text-sm text-gray-500 mb-4">Set the monthly budget for each expense category. These amounts will be shown in the owner mobile app's Budget Tracker.</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {BUDGET_CATEGORIES.map(cat => (
+                <div key={cat}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{cat}</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-gray-400 text-sm">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={budgets[cat] || ""}
+                      onChange={e => setBudgets(prev => ({ ...prev, [cat]: parseFloat(e.target.value) || 0 }))}
+                      className="w-full pl-7 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-4 mt-4">
+              <button
+                onClick={handleBudgetSave}
+                disabled={budgetSaving}
+                className="bg-indigo-600 text-white px-6 py-2 rounded-xl hover:bg-indigo-700 transition disabled:opacity-60 text-sm font-medium"
+              >
+                {budgetSaving ? "Saving..." : "Save Budget Settings"}
+              </button>
+              {budgetSaved && (
+                <span className="text-green-600 text-sm font-medium">✓ Saved successfully!</span>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Expense Table */}

@@ -13,7 +13,7 @@ from app.models.Package import Package, PackageBooking, PackageBookingRoom
 from app.models.foodorder import FoodOrder
 from app.models.food_item import FoodItem
 from app.models.expense import Expense
-from app.models.employee import Employee
+from app.models.employee import Employee, WorkingLog
 from app.models.service import Service, AssignedService
 from app.models.inventory import InventoryItem, InventoryCategory, PurchaseMaster, Vendor, StockIssue, StockIssueDetail, AssetRegistry, Location
 
@@ -273,6 +273,7 @@ def get_reports_data(db: Session = Depends(get_db), current_user: dict = Depends
             "total_expenses": db.query(func.sum(Expense.amount)).scalar() or 0,
             "total_bookings": db.query(Booking).count() + db.query(PackageBooking).count(),
             "active_employees": db.query(Employee).count(),
+            "online_employees": db.query(WorkingLog).filter(WorkingLog.date == date.today(), WorkingLog.check_out_time == None).count(),
             "total_rooms": db.query(Room).count(),
         },
         "recent_bookings": all_recent,
@@ -396,9 +397,17 @@ def get_summary(
         employees_count = len(sample) if len(sample) < 1000 else 1000
         # Calculate salary only for loaded employees
         total_salary = sum(float(e.salary or 0) for e in sample)
-    except:
+        
+        # Currently online (clocked in today)
+        online_count = db.query(WorkingLog).filter(
+            WorkingLog.date == today, 
+            WorkingLog.check_out_time == None
+        ).count()
+    except Exception as e:
+        print(f"Error calculating employees: {e}")
         employees_count = 0
         total_salary = 0
+        online_count = 0
 
     # Food items - quick check
     food_items_available = 0
@@ -583,6 +592,7 @@ def get_summary(
         "expense_count": expense_count,
         
         "active_employees": employees_count,
+        "online_employees": online_count,
         "total_salary": total_salary,
         
         "inventory_categories": inventory_categories_count,

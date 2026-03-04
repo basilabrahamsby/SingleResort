@@ -9,7 +9,7 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # 2. User App (Frontend)
+    # 2. User App (Frontend) - Changed from /pommaholidays to /pomma
     location /pomma {
         alias /var/www/pomma;
         index index.html;
@@ -48,7 +48,7 @@ server {
     gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/xml;
     gzip_disable "MSIE [1-6]\.";
 
-    # Handle uploads access via /pomma/uploads/ (legacy)
+    # Handle uploads access via /pomma/uploads/ (if frontend requests it there)
     location ^~ /pomma/uploads/ {
         alias /opt/pomma/ResortApp/uploads/;
         autoindex off;
@@ -56,22 +56,38 @@ server {
         add_header Cache-Control "public, no-transform";
     }
 
-    # NEW: Orchid Files (Media)
-    # Serves content from /var/www/inventory/ResortApp/uploads/
-    location /orchidfiles/ {
-        alias /var/www/inventory/ResortApp/;
-        try_files $uri $uri/ =404;
-        add_header Cache-Control "public, max-age=31536000";
-        autoindex off;
+    location /inventory {
+        alias /var/www/html/inventory/;
+        index index.html;
+        try_files $uri $uri/ /inventory/index.html;
+    }
+    
+    location /inventory/admin {
+        alias /var/www/html/inventory/admin;
+        try_files $uri $uri/ /inventory/admin/index.html;
     }
 
+    location /orchidadmin/ {
+        alias /var/www/html/orchidadmin/;
+        try_files $uri $uri/ /orchidadmin/index.html;
+        add_header Cache-Control "no-cache, must-revalidate";
+    }
     location /inventoryfiles/ {
         alias /var/www/inventory/ResortApp/static/;
         try_files $uri $uri/ =404;
         add_header Cache-Control "public, max-age=31536000";
     }
 
-    # Serving Uploaded Files directly via /uploads/ (legacy)
+    location /inventoryapi/ {
+        rewrite ^/inventoryapi/(.*) /$1 break;
+        proxy_pass http://127.0.0.1:8012;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Serving Uploaded Files directly via Nginx
     location /uploads/ {
         alias /opt/pomma/ResortApp/uploads/;
         autoindex off;
@@ -90,42 +106,13 @@ server {
     }
 
     listen 443 ssl; # managed by Certbot
-
-    location /orchidapi/ {
-        proxy_pass http://127.0.0.1:8011/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-    }
-
-    location /orchid/ {
-        alias /var/www/html/orchid/;
-        try_files $uri $uri/ /orchid/index.html =404;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
-        add_header Pragma "no-cache";
-        add_header Expires "0";
-    }
-
-    # Redirect /orchid/admin to /orchid/admin/
-    location = /orchid/admin {
-        return 301 /orchid/admin/;
-    }
-
-    location /orchid/admin/ {
-        alias /var/www/html/orchidadmin/;
-        try_files $uri $uri/ /orchid/admin/index.html;
-        add_header Cache-Control "no-cache, must-revalidate";
-    }
-
     ssl_certificate /etc/letsencrypt/live/teqmates.com/fullchain.pem; # managed by Certbot
     ssl_certificate_key /etc/letsencrypt/live/teqmates.com/privkey.pem; # managed by Certbot
     include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
 
-}
 
+}
 server {
     if ($host = www.teqmates.com) {
         return 301 https://$host$request_uri;
@@ -140,4 +127,8 @@ server {
     listen 80;
     server_name www.teqmates.com teqmates.com;
     return 404; # managed by Certbot
+
+
+
+
 }

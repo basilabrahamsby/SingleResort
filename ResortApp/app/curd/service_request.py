@@ -319,260 +319,264 @@ def update_service_request(db: Session, request_id: int, update_data: ServiceReq
     
     if update_data.status is not None:
         request.status = update_data.status
-        if update_data.status == "in_progress" and not request.started_at:
-            request.started_at = datetime.utcnow()
-            print(f"[DEBUG] Set started_at for ServiceRequest {request_id}: {request.started_at}")
-        elif update_data.status == "completed":
-            request.completed_at = datetime.utcnow()
+        
+    if update_data.billing_status is not None:
+        request.billing_status = update_data.billing_status
+
+    if update_data.status == "in_progress" and not request.started_at:
+        request.started_at = datetime.utcnow()
+        print(f"[DEBUG] Set started_at for ServiceRequest {request_id}: {request.started_at}")
+    elif update_data.status == "completed":
+        request.completed_at = datetime.utcnow()
             
-            # Resolve linked user for transaction logging (avoid FK violation if employee_id != user_id)
-            acting_user_id = None
-            acting_emp_id = update_data.employee_id or request.employee_id
-            if acting_emp_id:
-                acting_emp = db.query(Employee).filter(Employee.id == acting_emp_id).first()
-                if acting_emp:
-                    acting_user_id = acting_emp.user_id
+        # Resolve linked user for transaction logging (avoid FK violation if employee_id != user_id)
+        acting_user_id = None
+        acting_emp_id = update_data.employee_id or request.employee_id
+        if acting_emp_id:
+            acting_emp = db.query(Employee).filter(Employee.id == acting_emp_id).first()
+            if acting_emp:
+                acting_user_id = acting_emp.user_id
 
-            # If this is a delivery request with a food order, update the food order status
-            if request.food_order_id:
-                food_order = db.query(FoodOrder).filter(FoodOrder.id == request.food_order_id).first()
-                if food_order:
-                    if is_completing:
-                        # Mark food order as completed
-                        food_order.status = "completed"
-                        
-                        # Use billing_status from update_data if provided, otherwise default to unpaid
-                        if update_data.billing_status:
-                            food_order.billing_status = update_data.billing_status
-                        elif food_order.billing_status != "paid":
-                            food_order.billing_status = "unpaid"
-                        
-                        print(f"[INFO] Food order {food_order.id} marked as completed (billing: {food_order.billing_status}) due to delivery service completion")
-                    elif update_data.status == "cancelled":
-                        # Mark food order as cancelled
-                        food_order.status = "cancelled"
-                        print(f"[INFO] Food order {food_order.id} marked as cancelled due to delivery service cancellation")
+        # If this is a delivery request with a food order, update the food order status
+        if request.food_order_id:
+            food_order = db.query(FoodOrder).filter(FoodOrder.id == request.food_order_id).first()
+            if food_order:
+                if is_completing:
+                    # Mark food order as completed
+                    food_order.status = "completed"
+                    
+                    # Use billing_status from update_data if provided, otherwise default to unpaid
+                    if update_data.billing_status:
+                        food_order.billing_status = update_data.billing_status
+                    elif food_order.billing_status != "paid":
+                        food_order.billing_status = "unpaid"
+                    
+                    print(f"[INFO] Food order {food_order.id} marked as completed (billing: {food_order.billing_status}) due to delivery service completion")
+                elif update_data.status == "cancelled":
+                    # Mark food order as cancelled
+                    food_order.status = "cancelled"
+                    print(f"[INFO] Food order {food_order.id} marked as cancelled due to delivery service cancellation")
 
-            # NEW: Handle Inventory Movement for 'return_items' completion
-            if request.request_type == "return_items" and is_completing:
-                try:
-                    import json
-                    from app.models.inventory import LocationStock, InventoryTransaction, Location, InventoryItem, AssetMapping
+        # NEW: Handle Inventory Movement for 'return_items' completion
+        if request.request_type == "return_items" and is_completing:
+            try:
+                import json
+                from app.models.inventory import LocationStock, InventoryTransaction, Location, InventoryItem, AssetMapping
+                
+                # 1. Determine target location (default to Warehouse if not provided)
+                target_loc_id = update_data.return_location_id
+                if not target_loc_id:
+                     wh = db.query(Location).filter(Location.location_type == "WAREHOUSE").first()
+                     target_loc_id = wh.id if wh else None
+                
+                if target_loc_id and request.refill_data and request.room_id:
+                    room = db.query(Room).filter(Room.id == request.room_id).first()
+                    return_items = json.loads(request.refill_data)
                     
-                    # 1. Determine target location (default to Warehouse if not provided)
-                    target_loc_id = update_data.return_location_id
-                    if not target_loc_id:
-                         wh = db.query(Location).filter(Location.location_type == "WAREHOUSE").first()
-                         target_loc_id = wh.id if wh else None
-                    
-                    if target_loc_id and request.refill_data and request.room_id:
+                    if room and room.inventory_location_id:
+                        for item_data in return_items:
+                            item_id = item_data.get("item_id")
+                            qty_to_move = float(item_data.get("quantity_to_return", 0))
+                            is_rentable = item_data.get("is_rentable", False)
+                            
+                            if item_id and qty_to_move > 0:
+                                # Find room stock
+                                room_stock = db.query(LocationStock).filter(
+                                    LocationStock.location_id == room.inventory_location_id,
+                                    LocationStock.item_id == item_id
+                                ).first()
+                                
+                                # Only move if room has enough stock (capped to avoid inconsistencies)
+                                actual_move = min(qty_to_move, room_stock.quantity if room_stock else 0)
+                                if actual_move > 0:
+                                    # Deduct from Room
+                                    room_stock.quantity -= actual_move
+                                    
+                                    # Add to Target Location (e.g. Warehouse)
+                                    target_stock = db.query(LocationStock).filter(
+                                        LocationStock.location_id == target_loc_id,
+                                        LocationStock.item_id == item_id
+                                    ).first()
+                                    
+                                    if target_stock:
+                                        target_stock.quantity += actual_move
+                                    else:
+                                        db.add(LocationStock(
+                                            location_id=target_loc_id,
+                                            item_id=item_id,
+                                            quantity=actual_move
+                                        ))
+                                    
+                                    # CRITICAL FIX: Deactivate AssetMapping for fixed assets/rentables
+                                    # This ensures they don't show in room inventory anymore
+                                    if is_rentable:
+                                        # Deactivate asset mappings for this item in this room
+                                        asset_mappings = db.query(AssetMapping).filter(
+                                            AssetMapping.location_id == room.inventory_location_id,
+                                            AssetMapping.item_id == item_id,
+                                            AssetMapping.is_active == True
+                                        ).all()
+                                        
+                                        deactivated_count = 0
+                                        for mapping in asset_mappings:
+                                            if deactivated_count < actual_move:
+                                                mapping.is_active = False
+                                                deactivated_count += 1
+                                                print(f"[INVENTORY] Deactivated AssetMapping for {item_data.get('item_name')} in Room {room.number}")
+                                    
+                                    # Log Transaction
+                                    db.add(InventoryTransaction(
+                                        item_id=item_id,
+                                        transaction_type="transfer",
+                                        quantity=actual_move,
+                                        reference_number=f"RET-SR-{request.id}",
+                                        notes=f"Return from Room {room.number} via Service Request",
+                                        created_by=acting_user_id
+                                    ))
+                                    print(f"[INVENTORY] Moved {actual_move} of item {item_id} from Room {room.number} to Loc {target_loc_id}")
+            except Exception as e:
+                print(f"[ERROR] Failed to process return items inventory movement: {e}")
+
+        # NEW: Handle Inventory Movement for 'replenishment' or 'refill' completion
+        if request.request_type in ["replenishment", "refill"] and is_completing:
+            try:
+                import json
+                from app.models.inventory import LocationStock, InventoryTransaction, AssetMapping, InventoryItem, AssetRegistry, Location
+
+                # 1. Determine Source Location (Pickup Location)
+                source_loc_id = request.pickup_location_id
+                if not source_loc_id:
+                    # Default to Warehouse if not set
+                    wh = db.query(Location).filter(Location.location_type == "WAREHOUSE").first()
+                    source_loc_id = wh.id if wh else None
+                    print(f"[REPLENISHMENT] Pickup location not set for request {request.id}. Defaulting to Warehouse (Loc {source_loc_id}).")
+                
+                if not source_loc_id:
+                    print(f"[REPLENISHMENT] No pickup location available, skipping automated stock movement.")
+                else:
+                    if request.refill_data and request.room_id:
                         room = db.query(Room).filter(Room.id == request.room_id).first()
-                        return_items = json.loads(request.refill_data)
+                        replenish_items = json.loads(request.refill_data)
                         
                         if room and room.inventory_location_id:
-                            for item_data in return_items:
+                            for item_data in replenish_items:
                                 item_id = item_data.get("item_id")
-                                qty_to_move = float(item_data.get("quantity_to_return", 0))
-                                is_rentable = item_data.get("is_rentable", False)
+                                # Support both 'quantity' and 'quantity_to_refill' keys
+                                qty_to_move = float(item_data.get("quantity") or item_data.get("quantity_to_refill") or 1)
+                                is_fixed_asset = item_data.get("is_fixed_asset", False) or item_data.get("is_asset", False)
                                 
-                                if item_id and qty_to_move > 0:
-                                    # Find room stock
+                                if item_id:
+                                    # Deduct from Pickup Location
+                                    pickup_stock = db.query(LocationStock).filter(
+                                        LocationStock.location_id == source_loc_id,
+                                        LocationStock.item_id == item_id
+                                    ).first()
+
+                                    if pickup_stock:
+                                        if pickup_stock.quantity >= qty_to_move:
+                                            pickup_stock.quantity -= qty_to_move
+                                        else:
+                                            print(f"[REPLENISHMENT] Warning: Insufficient stock at pickup loc {source_loc_id} for item {item_id}. Proceeding correctly anyway.")
+                                            pickup_stock.quantity = 0 # Consume whatever is there or go negative? Better to just set 0 if low.
+                                    else:
+                                         print(f"[REPLENISHMENT] Warning: No stock record at pickup loc {source_loc_id} for item {item_id}.")
+                                    
+                                    # Add to Room Location
                                     room_stock = db.query(LocationStock).filter(
                                         LocationStock.location_id == room.inventory_location_id,
                                         LocationStock.item_id == item_id
                                     ).first()
                                     
-                                    # Only move if room has enough stock (capped to avoid inconsistencies)
-                                    actual_move = min(qty_to_move, room_stock.quantity if room_stock else 0)
-                                    if actual_move > 0:
-                                        # Deduct from Room
-                                        room_stock.quantity -= actual_move
-                                        
-                                        # Add to Target Location (e.g. Warehouse)
-                                        target_stock = db.query(LocationStock).filter(
-                                            LocationStock.location_id == target_loc_id,
-                                            LocationStock.item_id == item_id
-                                        ).first()
-                                        
-                                        if target_stock:
-                                            target_stock.quantity += actual_move
-                                        else:
-                                            db.add(LocationStock(
-                                                location_id=target_loc_id,
-                                                item_id=item_id,
-                                                quantity=actual_move
-                                            ))
-                                        
-                                        # CRITICAL FIX: Deactivate AssetMapping for fixed assets/rentables
-                                        # This ensures they don't show in room inventory anymore
-                                        if is_rentable:
-                                            # Deactivate asset mappings for this item in this room
-                                            asset_mappings = db.query(AssetMapping).filter(
-                                                AssetMapping.location_id == room.inventory_location_id,
-                                                AssetMapping.item_id == item_id,
-                                                AssetMapping.is_active == True
-                                            ).all()
-                                            
-                                            deactivated_count = 0
-                                            for mapping in asset_mappings:
-                                                if deactivated_count < actual_move:
-                                                    mapping.is_active = False
-                                                    deactivated_count += 1
-                                                    print(f"[INVENTORY] Deactivated AssetMapping for {item_data.get('item_name')} in Room {room.number}")
-                                        
-                                        # Log Transaction
-                                        db.add(InventoryTransaction(
+                                    if room_stock:
+                                        room_stock.quantity += qty_to_move
+                                    else:
+                                        db.add(LocationStock(
+                                            location_id=room.inventory_location_id,
                                             item_id=item_id,
-                                            transaction_type="transfer",
-                                            quantity=actual_move,
-                                            reference_number=f"RET-SR-{request.id}",
-                                            notes=f"Return from Room {room.number} via Service Request",
-                                            created_by=acting_user_id
-                                        ))
-                                        print(f"[INVENTORY] Moved {actual_move} of item {item_id} from Room {room.number} to Loc {target_loc_id}")
-                except Exception as e:
-                    print(f"[ERROR] Failed to process return items inventory movement: {e}")
-
-            # NEW: Handle Inventory Movement for 'replenishment' or 'refill' completion
-            if request.request_type in ["replenishment", "refill"] and is_completing:
-                try:
-                    import json
-                    from app.models.inventory import LocationStock, InventoryTransaction, AssetMapping, InventoryItem, AssetRegistry, Location
-
-                    # 1. Determine Source Location (Pickup Location)
-                    source_loc_id = request.pickup_location_id
-                    if not source_loc_id:
-                        # Default to Warehouse if not set
-                        wh = db.query(Location).filter(Location.location_type == "WAREHOUSE").first()
-                        source_loc_id = wh.id if wh else None
-                        print(f"[REPLENISHMENT] Pickup location not set for request {request.id}. Defaulting to Warehouse (Loc {source_loc_id}).")
-                    
-                    if not source_loc_id:
-                        print(f"[REPLENISHMENT] No pickup location available, skipping automated stock movement.")
-                    else:
-                        if request.refill_data and request.room_id:
-                            room = db.query(Room).filter(Room.id == request.room_id).first()
-                            replenish_items = json.loads(request.refill_data)
-                            
-                            if room and room.inventory_location_id:
-                                for item_data in replenish_items:
-                                    item_id = item_data.get("item_id")
-                                    # Support both 'quantity' and 'quantity_to_refill' keys
-                                    qty_to_move = float(item_data.get("quantity") or item_data.get("quantity_to_refill") or 1)
-                                    is_fixed_asset = item_data.get("is_fixed_asset", False) or item_data.get("is_asset", False)
-                                    
-                                    if item_id:
-                                        # Deduct from Pickup Location
-                                        pickup_stock = db.query(LocationStock).filter(
-                                            LocationStock.location_id == source_loc_id,
-                                            LocationStock.item_id == item_id
-                                        ).first()
-
-                                        if pickup_stock:
-                                            if pickup_stock.quantity >= qty_to_move:
-                                                pickup_stock.quantity -= qty_to_move
-                                            else:
-                                                print(f"[REPLENISHMENT] Warning: Insufficient stock at pickup loc {source_loc_id} for item {item_id}. Proceeding correctly anyway.")
-                                                pickup_stock.quantity = 0 # Consume whatever is there or go negative? Better to just set 0 if low.
-                                        else:
-                                             print(f"[REPLENISHMENT] Warning: No stock record at pickup loc {source_loc_id} for item {item_id}.")
-                                        
-                                        # Add to Room Location
-                                        room_stock = db.query(LocationStock).filter(
-                                            LocationStock.location_id == room.inventory_location_id,
-                                            LocationStock.item_id == item_id
-                                        ).first()
-                                        
-                                        if room_stock:
-                                            room_stock.quantity += qty_to_move
-                                        else:
-                                            db.add(LocationStock(
-                                                location_id=room.inventory_location_id,
-                                                item_id=item_id,
-                                                quantity=qty_to_move,
-                                                last_updated=datetime.utcnow()
-                                            ))
-                                        
-                                        # Log Transaction
-                                        db.add(InventoryTransaction(
-                                            item_id=item_id,
-                                            transaction_type="transfer",
                                             quantity=qty_to_move,
-                                            reference_number=f"RPL-SR-{request.id}",
-                                            notes=f"Replenishment for Room {room.number} from Loc {source_loc_id}",
-                                            created_by=acting_user_id
+                                            last_updated=datetime.utcnow()
                                         ))
+                                    
+                                    # Log Transaction
+                                    db.add(InventoryTransaction(
+                                        item_id=item_id,
+                                        transaction_type="transfer",
+                                        quantity=qty_to_move,
+                                        reference_number=f"RPL-SR-{request.id}",
+                                        notes=f"Replenishment for Room {room.number} from Loc {source_loc_id}",
+                                        created_by=acting_user_id
+                                    ))
+                                    
+                                    # FIXED ASSETS: Re-activate mapping or update registry?
+                                    # If it's a fixed asset, we might want to update AssetRegistry location if we are tracking specific serials.
+                                    # But often Replenishment is just "bring a generic bed sheet".
+                                    # If we have deactivated mapping previously, we should re-activate one?
+                                    if is_fixed_asset:
+                                        # Find an inactive mapping and activate it to restore "standard" state
+                                        inactive_mapping = db.query(AssetMapping).filter(
+                                            AssetMapping.location_id == room.inventory_location_id,
+                                            AssetMapping.item_id == item_id,
+                                            AssetMapping.is_active == False
+                                        ).first()
                                         
-                                        # FIXED ASSETS: Re-activate mapping or update registry?
-                                        # If it's a fixed asset, we might want to update AssetRegistry location if we are tracking specific serials.
-                                        # But often Replenishment is just "bring a generic bed sheet".
-                                        # If we have deactivated mapping previously, we should re-activate one?
-                                        if is_fixed_asset:
-                                            # Find an inactive mapping and activate it to restore "standard" state
-                                            inactive_mapping = db.query(AssetMapping).filter(
-                                                AssetMapping.location_id == room.inventory_location_id,
-                                                AssetMapping.item_id == item_id,
-                                                AssetMapping.is_active == False
-                                            ).first()
-                                            
-                                            if inactive_mapping:
-                                                inactive_mapping.is_active = True
-                                                print(f"[REPLENISHMENT] Re-activated AssetMapping for {item_id} in Room {room.number}")
-                                            
-                                        print(f"[INVENTORY] Replenished {qty_to_move} of item {item_id} to Room {room.number} from Loc {source_loc_id}")
+                                        if inactive_mapping:
+                                            inactive_mapping.is_active = True
+                                            print(f"[REPLENISHMENT] Re-activated AssetMapping for {item_id} in Room {room.number}")
+                                        
+                                    print(f"[INVENTORY] Replenished {qty_to_move} of item {item_id} to Room {room.number} from Loc {source_loc_id}")
 
-                except Exception as e:
-                    print(f"[ERROR] Failed to process replenishment items inventory movement: {e}")
+            except Exception as e:
+                print(f"[ERROR] Failed to process replenishment items inventory movement: {e}")
 
-            # Sync with AssignedService: Heuristic to auto-complete duplicate manual assignments
-            if is_completing:
-                try:
-                    from app.models.service import AssignedService, Service
-                    from app.curd.service import update_assigned_service_status
-                    from app.schemas.service import AssignedServiceUpdate
+        # Sync with AssignedService: Heuristic to auto-complete duplicate manual assignments
+        if is_completing:
+            try:
+                from app.models.service import AssignedService, Service
+                from app.curd.service import update_assigned_service_status
+                from app.schemas.service import AssignedServiceUpdate
 
-                    target_employee_id = update_data.employee_id or request.employee_id
-                    
-                    if target_employee_id and request.room_id:
-                        # Use nested transaction to isolate failures
-                        try:
-                            with db.begin_nested():
-                                # Find pending assigned services for this room/employee
-                                query = db.query(AssignedService).join(Service).filter(
-                                    AssignedService.room_id == request.room_id,
-                                    AssignedService.employee_id == target_employee_id,
-                                    AssignedService.status.notin_(['completed', 'cancelled', 'rejected'])
-                                )
-                                
-                                # Apply name filter based on request type to avoid false positives
-                                if request.request_type == 'delivery':
-                                    query = query.filter(Service.name.ilike('%food%') | Service.name.ilike('%delivery%'))
-                                elif request.request_type == 'cleaning':
-                                    query = query.filter(Service.name.ilike('%clean%') | Service.name.ilike('%housekeep%') | Service.name.ilike('%room%'))
-                                elif request.request_type == 'refill':
-                                    query = query.filter(Service.name.ilike('%refill%'))
-                                
-                                # Only auto-complete services assigned within the last 48 hours to be safe
-                                matching_services = query.all()
-                                
-                                for svc in matching_services:
-                                    # Verify timestamp safely
-                                    assigned_time = svc.assigned_at or datetime.utcnow()
-                                    time_diff = datetime.utcnow() - assigned_time
-                                    if time_diff.total_seconds() < 172800: # 48 hours
-                                        print(f"[INFO] Auto-completing linked AssignedService {svc.id} ({svc.service.name}) matching ServiceRequest {request.id}")
-                                        update_assigned_service_status(db, svc.id, AssignedServiceUpdate(status='completed'), commit=False)
-                        except Exception as nested_error:
-                            print(f"[WARNING] Nested transaction failed during AssignedService sync: {nested_error}")
-                            import traceback
-                            print(traceback.format_exc())
-                            # Don't rollback - continue with main update even if sync fails
-                except Exception as sync_error:
-                    print(f"[WARNING] Failed to sync AssignedService status: {sync_error}")
-                    import traceback
-                    print(traceback.format_exc())
-                    # Don't rollback - continue with main update even if sync fails
-    
+                target_employee_id = update_data.employee_id or request.employee_id
+                
+                if target_employee_id and request.room_id:
+                    # Use nested transaction to isolate failures
+                    try:
+                        with db.begin_nested():
+                            # Find pending assigned services for this room/employee
+                            query = db.query(AssignedService).join(Service).filter(
+                                AssignedService.room_id == request.room_id,
+                                AssignedService.employee_id == target_employee_id,
+                                AssignedService.status.notin_(['completed', 'cancelled', 'rejected'])
+                            )
+                            
+                            # Apply name filter based on request type to avoid false positives
+                            if request.request_type == 'delivery':
+                                query = query.filter(Service.name.ilike('%food%') | Service.name.ilike('%delivery%'))
+                            elif request.request_type == 'cleaning':
+                                query = query.filter(Service.name.ilike('%clean%') | Service.name.ilike('%housekeep%') | Service.name.ilike('%room%'))
+                            elif request.request_type == 'refill':
+                                query = query.filter(Service.name.ilike('%refill%'))
+                            
+                            # Only auto-complete services assigned within the last 48 hours to be safe
+                            matching_services = query.all()
+                            
+                            for svc in matching_services:
+                                # Verify timestamp safely
+                                assigned_time = svc.assigned_at or datetime.utcnow()
+                                time_diff = datetime.utcnow() - assigned_time
+                                if time_diff.total_seconds() < 172800: # 48 hours
+                                    print(f"[INFO] Auto-completing linked AssignedService {svc.id} ({svc.service.name}) matching ServiceRequest {request.id}")
+                                    update_assigned_service_status(db, svc.id, AssignedServiceUpdate(status='completed'), commit=False)
+                    except Exception as nested_error:
+                        print(f"[WARNING] Nested transaction failed during AssignedService sync: {nested_error}")
+                        import traceback
+                        print(traceback.format_exc())
+                        # Don't rollback - continue with main update even if sync fails
+            except Exception as sync_error:
+                print(f"[WARNING] Failed to sync AssignedService status: {sync_error}")
+                import traceback
+                print(traceback.format_exc())
+                # Don't rollback - continue with main update even if sync fails
+
     if update_data.employee_id is not None:
         request.employee_id = update_data.employee_id
     if update_data.pickup_location_id is not None:

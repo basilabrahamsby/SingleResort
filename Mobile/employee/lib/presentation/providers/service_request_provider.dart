@@ -17,9 +17,12 @@ class ServiceRequestProvider with ChangeNotifier {
   String? get error => _error;
 
   Future<void> fetchRequests() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+    final softLoading = _requests.isNotEmpty;
+    if (!softLoading) {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+    }
 
     try {
       // Fetch active requests (pending/in_progress) - this is the default
@@ -59,24 +62,67 @@ class ServiceRequestProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateRequestStatus(String id, String status) async {
+  Future<bool> updateRequestStatus(String id, String status, {String? billingStatus, int? employeeId}) async {
     try {
-      final response = await _apiService.dio.put(
-        '${ApiConstants.serviceRequests}/$id',
-        data: {
-          'status': status,
-        },
-      );
-      if (response.statusCode == 200) {
-        final index = _requests.indexWhere((r) => r.id == id);
-        if (index != -1) {
-          _requests[index].status = status;
+      final parsedId = int.tryParse(id);
+      if (parsedId != null && parsedId > 2000000) {
+        // It's an assigned service (offset by 2,000,000)
+        final actualId = parsedId - 2000000;
+
+        final response = await _apiService.dio.patch(
+          '/services/assigned/$actualId',
+          data: {
+            'status': status,
+            if (billingStatus != null) 'billing_status': billingStatus,
+            if (employeeId != null) 'employee_id': employeeId,
+          },
+        );
+        
+        if (response.statusCode == 200) {
+          print('[SRP] AssignedService $actualId → $status ✓');
+          // Full refresh to get authoritative server state
+          await fetchRequests();
+          return true;
+        } else {
+          final detail = (response.data is Map ? response.data['detail'] : response.data?.toString()) ?? 'Unknown error';
+          print('[SRP] AssignedService $actualId update failed (${response.statusCode}): $detail');
+          _error = detail;
           notifyListeners();
+          return false;
         }
-        return true;
+      } else {
+        // Normal service request or checkout request (1M offset)
+        final Map<String, dynamic> payload = {'status': status};
+        if (billingStatus != null) payload['billing_status'] = billingStatus;
+        if (employeeId != null) payload['employee_id'] = employeeId;
+
+        final response = await _apiService.dio.put(
+          '${ApiConstants.serviceRequests}/$id',
+          data: payload,
+        );
+        if (response.statusCode == 200) {
+          print('[SRP] ServiceRequest $id → $status ✓');
+          // Optimistic local update first so UI responds instantly
+          final index = _requests.indexWhere((r) => r.id == id);
+          if (index != -1) {
+            _requests[index].status = status;
+            notifyListeners();
+          }
+          // Then full refresh in background to ensure consistency
+          fetchRequests();
+          return true;
+        } else {
+          final detail = (response.data is Map ? response.data['detail'] : response.data?.toString()) ?? 'Unknown error';
+          print('[SRP] ServiceRequest $id update failed (${response.statusCode}): $detail');
+          _error = detail;
+          notifyListeners();
+          return false;
+        }
       }
     } catch (e) {
-      print("Error updating request status: $e");
+      print("[SRP] Error updating request status: $e");
+      _error = e.toString();
+      notifyListeners();
     }
     return false;
   }

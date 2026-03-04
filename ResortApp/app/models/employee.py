@@ -11,7 +11,8 @@ class Employee(Base):
     salary = Column(Float)
     join_date = Column(Date)
     image_url = Column(String, nullable=True) # ✅ Changed 'image' to 'image_url' for clarity
-    
+    daily_tasks = Column(String, nullable=True) # JSON or Text representing daily task list
+
     # Leave balances (total allocated per year)
     paid_leave_balance = Column(Integer, default=12)
     sick_leave_balance = Column(Integer, default=12)
@@ -60,5 +61,8 @@ class WorkingLog(Base):
     check_in_time = Column(Time)
     check_out_time = Column(Time)
     location = Column(String, nullable=True) # e.g., 'Office', 'Remote'
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    completed_tasks = Column(String, nullable=True) # newly added JSON array string for tracked task completion
     
     employee = relationship("Employee", back_populates="working_logs")

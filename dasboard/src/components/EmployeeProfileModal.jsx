@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Calendar, Clock, DollarSign, User, Phone, Mail, Briefcase, MapPin, Users, TrendingUp, Award } from 'lucide-react';
+import { X, Calendar, Clock, DollarSign, User, Phone, Mail, Briefcase, MapPin, Users, TrendingUp, Award, CheckSquare, Trash2, Plus } from 'lucide-react';
 import api from '../services/api';
 import { formatCurrency } from '../utils/currency';
 import { formatDateIST, formatDateTimeIST } from '../utils/dateUtils';
@@ -11,6 +11,8 @@ const EmployeeProfileModal = ({ employeeId, onClose }) => {
     const [workLogs, setWorkLogs] = useState([]);
     const [leaves, setLeaves] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [newTask, setNewTask] = useState('');
+    const [isUpdating, setIsUpdating] = useState(false);
 
     useEffect(() => {
         if (employeeId) {
@@ -35,6 +37,62 @@ const EmployeeProfileModal = ({ employeeId, onClose }) => {
 
         return { totalDays, totalHours, usedLeaves, availableLeaves };
     }, [workLogs, leaves]);
+
+    const handleAddTask = async () => {
+        if (!newTask.trim() || !employee) return;
+
+        setIsUpdating(true);
+        try {
+            let currentTasks = [];
+            try {
+                currentTasks = employee.daily_tasks ? JSON.parse(employee.daily_tasks) : [];
+                if (!Array.isArray(currentTasks)) currentTasks = employee.daily_tasks ? [employee.daily_tasks] : [];
+            } catch {
+                currentTasks = employee.daily_tasks ? [employee.daily_tasks] : [];
+            }
+
+            const updatedTasks = [...currentTasks, newTask.trim()];
+            const formData = new FormData();
+            formData.append('daily_tasks', JSON.stringify(updatedTasks));
+
+            // Use the correct API endpoint
+            const response = await api.put(`/employees/${employee.id}`, formData);
+            setEmployee(response.data);
+            setNewTask('');
+        } catch (error) {
+            console.error("Failed to add task:", error);
+            alert("Failed to add task.");
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const handleDeleteTask = async (taskToDelete) => {
+        if (!window.confirm(`Delete task: "${taskToDelete}"?`) || !employee) return;
+
+        setIsUpdating(true);
+        try {
+            let currentTasks = [];
+            try {
+                currentTasks = employee.daily_tasks ? JSON.parse(employee.daily_tasks) : [];
+                if (!Array.isArray(currentTasks)) currentTasks = employee.daily_tasks ? [employee.daily_tasks] : [];
+            } catch {
+                currentTasks = employee.daily_tasks ? [employee.daily_tasks] : [];
+            }
+
+            const updatedTasks = currentTasks.filter(t => t !== taskToDelete);
+            const formData = new FormData();
+            formData.append('daily_tasks', JSON.stringify(updatedTasks));
+
+            const response = await api.put(`/employees/${employee.id}`, formData);
+            setEmployee(response.data);
+        } catch (error) {
+            console.error("Failed to delete task:", error);
+            alert("Failed to delete task.");
+        } finally {
+            setIsUpdating(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -124,6 +182,7 @@ const EmployeeProfileModal = ({ employeeId, onClose }) => {
                         {[
                             { id: 'attendance', label: 'Attendance', icon: Clock },
                             { id: 'leaves', label: 'Leaves', icon: Calendar },
+                            { id: 'tasks', label: 'Tasks', icon: CheckSquare },
                             { id: 'payments', label: 'Payments', icon: DollarSign },
                             { id: 'details', label: 'Details', icon: User },
                         ].map(tab => (
@@ -131,8 +190,8 @@ const EmployeeProfileModal = ({ employeeId, onClose }) => {
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`flex items-center space-x-2 py-4 px-2 border-b-2 transition ${activeTab === tab.id
-                                        ? 'border-indigo-600 text-indigo-600'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                                    ? 'border-indigo-600 text-indigo-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700'
                                     }`}
                             >
                                 <tab.icon size={18} />
@@ -304,6 +363,84 @@ const EmployeeProfileModal = ({ employeeId, onClose }) => {
                                     <p className="text-gray-600 font-medium">Payment history coming soon</p>
                                     <p className="text-sm text-gray-500 mt-2">Detailed salary slips and payment records will be available here</p>
                                 </div>
+                            </motion.div>
+                        )}
+
+                        {activeTab === 'tasks' && (
+                            <motion.div
+                                key="tasks"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -20 }}
+                                className="space-y-4"
+                            >
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-semibold text-gray-800">Daily Operations</h3>
+                                    <span className="text-xs text-gray-500 font-medium uppercase tracking-widest">Fixed Shift Tasks</span>
+                                </div>
+
+                                {/* Add Task Input */}
+                                <div className="flex gap-2 mb-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                    <input
+                                        type="text"
+                                        value={newTask}
+                                        onChange={(e) => setNewTask(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                                        placeholder="Define a new daily task..."
+                                        className="flex-1 px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-medium"
+                                        disabled={isUpdating}
+                                    />
+                                    <button
+                                        onClick={handleAddTask}
+                                        disabled={isUpdating || !newTask.trim()}
+                                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        <Plus size={16} />
+                                        Add Task
+                                    </button>
+                                </div>
+
+                                {(() => {
+                                    let tasks = [];
+                                    try {
+                                        tasks = employee.daily_tasks ? JSON.parse(employee.daily_tasks) : [];
+                                        if (!Array.isArray(tasks)) tasks = employee.daily_tasks ? [employee.daily_tasks] : [];
+                                    } catch {
+                                        tasks = employee.daily_tasks ? [employee.daily_tasks] : [];
+                                    }
+
+                                    if (tasks.length === 0) {
+                                        return (
+                                            <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+                                                <CheckSquare size={48} className="mx-auto text-gray-300 mb-3" />
+                                                <p className="text-gray-500 font-medium">No daily tasks defined for this employee.</p>
+                                                <p className="text-xs text-gray-400 mt-1">Add tasks above to ensure shift integrity.</p>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div className="space-y-2">
+                                            {tasks.map((task, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:border-indigo-200 hover:shadow-sm transition-all group">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600">
+                                                            <CheckSquare size={16} />
+                                                        </div>
+                                                        <span className="text-gray-800 font-semibold">{task}</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleDeleteTask(task)}
+                                                        className="p-2 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                        title="Remove Task"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
                             </motion.div>
                         )}
 

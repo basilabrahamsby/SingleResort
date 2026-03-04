@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../data/models/kot_model.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../providers/kitchen_provider.dart';
+import 'package:orchid_employee/presentation/providers/auth_provider.dart';
 import 'package:intl/intl.dart';
 
 class KOTHistoryScreen extends StatefulWidget {
@@ -19,7 +20,8 @@ class _KOTHistoryScreenState extends State<KOTHistoryScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<KitchenProvider>().fetchOrderHistory();
+      final employeeId = context.read<AuthProvider>().employeeId;
+      context.read<KitchenProvider>().fetchOrderHistory(employeeId: employeeId);
     });
   }
 
@@ -35,7 +37,10 @@ class _KOTHistoryScreenState extends State<KOTHistoryScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => context.read<KitchenProvider>().fetchOrderHistory(),
+            onPressed: () {
+              final employeeId = context.read<AuthProvider>().employeeId;
+              context.read<KitchenProvider>().fetchOrderHistory(employeeId: employeeId);
+            },
           ),
         ],
       ),
@@ -79,7 +84,7 @@ class _KOTHistoryScreenState extends State<KOTHistoryScreen> {
                         itemBuilder: (context, index) {
                           final kot = history[index];
                           final isCancelled = kot.status.toLowerCase() == 'cancelled';
-                          final isPaid = kot.status.toLowerCase() == 'paid';
+                          final isPaid = kot.status.toLowerCase() == 'paid' || kot.billingStatus?.toLowerCase() == 'paid';
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 12),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:dio/dio.dart'; // Needed for FormData
 import '../models/employee.dart';
 import '../models/leave.dart';
@@ -110,7 +111,32 @@ class StaffProvider with ChangeNotifier {
 
   Future<bool> clockIn(int employeeId, String location) async {
     try {
-      await _apiService.client.post('/attendance/clock-in', data: {'employee_id': employeeId, 'location': location});
+      double? lat;
+      double? lon;
+
+      try {
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        
+        if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
+          Position position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high
+          );
+          lat = position.latitude;
+          lon = position.longitude;
+        }
+      } catch (e) {
+        print("Error fetching GPS coordinates: $e");
+      }
+
+      await _apiService.client.post('/attendance/clock-in', data: {
+        'employee_id': employeeId, 
+        'location': location,
+        'latitude': lat,
+        'longitude': lon,
+      });
       await fetchWorkLogs(employeeId); // Refresh logs
       await fetchEmployees(); // Refresh status
       return true;

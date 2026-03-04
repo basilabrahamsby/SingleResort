@@ -67,6 +67,7 @@ def create_employee_with_image(
     sick_leave_balance: int = 12,
     long_leave_balance: int = 5,
     wellness_leave_balance: int = 5,
+    daily_tasks: str = None,
 ):
     # This part of the code is responsible for creating the new Employee object.
     new_employee = Employee(
@@ -81,6 +82,7 @@ def create_employee_with_image(
         sick_leave_balance=sick_leave_balance,
         long_leave_balance=long_leave_balance,
         wellness_leave_balance=wellness_leave_balance,
+        daily_tasks=daily_tasks,
     )
     db.add(new_employee)
     db.commit()

@@ -1,11 +1,10 @@
-import sys, os
-sys.path.insert(0, '/var/www/inventory/ResortApp')
 from app.database import SessionLocal
 from app.models.user import User
 
 db = SessionLocal()
 users = db.query(User).all()
-print("Available users:")
+print(f"{'ID':<5} | {'Username':<15} | {'Emp ID'}")
+print("-" * 35)
 for u in users:
-    print(f"id={u.id} email={u.email} role={u.role.name if u.role else 'None'}")
+    print(f"{u.id:<5} | {u.username:<15} | {u.employee_id}")
 db.close()

@@ -113,7 +113,8 @@ def get_current_user_profile(
                 "paid_leave_balance": employee.paid_leave_balance,
                 "sick_leave_balance": employee.sick_leave_balance,
                 "long_leave_balance": employee.long_leave_balance,
-                "wellness_leave_balance": employee.wellness_leave_balance
+                "wellness_leave_balance": employee.wellness_leave_balance,
+                "daily_tasks": employee.daily_tasks
             }
         
         return response

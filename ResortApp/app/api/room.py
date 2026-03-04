@@ -414,28 +414,31 @@ def _get_rooms_impl(db: Session, skip: int = 0, limit: int = 20):
             raise HTTPException(status_code=500, detail=f"Error querying rooms: {str(query_error)}")
         
         # Return the rooms directly - SQLAlchemy should handle serialization
-        # Hydrate current guest name
         from app.models.booking import Booking, BookingRoom
         from app.models.Package import PackageBooking, PackageBookingRoom
         
-        for room in rooms:
-            # Check regular bookings first
-            active_booking = db.query(Booking).join(BookingRoom).filter(
-                BookingRoom.room_id == room.id,
-                Booking.status.in_(['checked-in', 'checked_in', 'Checked-in', 'booked', 'Booked', 'occupied', 'Occupied'])
-            ).order_by(Booking.id.desc()).first()
+        if rooms:
+            room_ids = [r.id for r in rooms]
             
-            if active_booking:
-                room.current_guest_name = getattr(active_booking, 'guest_name', 'Guest')
-            else:
-                # Check package bookings if no regular booking found
-                active_pkg_booking = db.query(PackageBooking).join(PackageBookingRoom).filter(
-                    PackageBookingRoom.room_id == room.id,
-                    PackageBooking.status.in_(['checked-in', 'checked_in', 'Checked-in', 'booked', 'Booked', 'occupied', 'Occupied'])
-                ).order_by(PackageBooking.id.desc()).first()
-                
-                if active_pkg_booking:
-                    room.current_guest_name = getattr(active_pkg_booking, 'guest_name', 'Guest')
+            # Fetch all regular active bookings for these rooms in one query
+            active_bookings = db.query(BookingRoom.room_id, Booking.guest_name).join(Booking).filter(
+                BookingRoom.room_id.in_(room_ids),
+                Booking.status.in_(['checked-in', 'checked_in', 'Checked-in', 'booked', 'Booked', 'occupied', 'Occupied'])
+            ).all()
+            regular_booking_map = {b.room_id: b.guest_name for b in active_bookings}
+            
+            # Fetch all package active bookings for these rooms in one query
+            active_pkg_bookings = db.query(PackageBookingRoom.room_id, PackageBooking.guest_name).join(PackageBooking).filter(
+                PackageBookingRoom.room_id.in_(room_ids),
+                PackageBooking.status.in_(['checked-in', 'checked_in', 'Checked-in', 'booked', 'Booked', 'occupied', 'Occupied'])
+            ).all()
+            pkg_booking_map = {b.room_id: b.guest_name for b in active_pkg_bookings}
+            
+            for room in rooms:
+                if room.id in regular_booking_map:
+                    room.current_guest_name = regular_booking_map[room.id]
+                elif room.id in pkg_booking_map:
+                    room.current_guest_name = pkg_booking_map[room.id]
                 else:
                     room.current_guest_name = None
         

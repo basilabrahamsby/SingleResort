@@ -52,9 +52,10 @@ class RoomProvider with ChangeNotifier {
         // Update local state
         final index = _rooms.indexWhere((r) => r.id == roomId);
         if (index != -1) {
-          _rooms[index].status = status; // Assuming we use same status names
+          _rooms[index].status = status; 
           notifyListeners();
         }
+        fetchRooms(); // Silent refresh
         return true;
       }
     } catch (e) {

@@ -1,59 +1,40 @@
 import os
 
-NGINX_CONF = "/etc/nginx/sites-enabled/pomma"
-
 def final_fix():
-    if not os.path.exists(NGINX_CONF):
-        print(f"Error: {NGINX_CONF} not found.")
+    path = "/etc/nginx/sites-available/teqmates"
+    with open(path, "r") as f:
+        content = f.read()
+
+    start_anchor = "location /orchidadmin/"
+    end_anchor = "location /orchidapi/"
+    
+    start_idx = content.find(start_anchor)
+    end_idx = content.find(end_anchor)
+
+    if start_idx == -1 or end_idx == -1:
+        print("Anchors not found!")
         return
 
-    with open(NGINX_CONF, "r") as f:
-        lines = f.readlines()
+    # Cleaned middle part
+    middle = """location /orchidadmin/ {
+        alias /var/www/html/orchidadmin/;
+        index index.html;
+        try_files $uri $uri/ /orchidadmin/index.html;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, max-age=0";
+    }
 
-    new_lines = []
-    skip = False
-    for line in lines:
-        # Skip existing inventory or inventoryapi blocks
-        if 'location /inventory/' in line or 'location /inventoryapi/' in line:
-            skip = True
-            continue
-        if skip and line.strip() == "}":
-            skip = False
-            continue
-        if skip:
-            continue
-        new_lines.append(line)
+    location = /orchidadmin {
+        return 301 $scheme://$http_host/orchidadmin/;
+    }
 
-    # Re-insert blocks at the start of the server block (after listen)
-    final_lines = []
-    inserted = False
-    for line in new_lines:
-        final_lines.append(line)
-        if "listen 443 ssl;" in line and not inserted:
-            # Add inventoryapi block
-            final_lines.append("\n    location /inventoryapi/ {\n")
-            final_lines.append("        proxy_pass http://127.0.0.1:8011/;\n")
-            final_lines.append("        proxy_set_header Host $host;\n")
-            final_lines.append("        proxy_set_header X-Real-IP $remote_addr;\n")
-            final_lines.append("        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
-            final_lines.append("        proxy_set_header X-Forwarded-Proto $scheme;\n")
-            final_lines.append("        add_header Cache-Control \"no-cache, no-store, must-revalidate\";\n")
-            final_lines.append("    }\n")
-            
-            # Add inventory block
-            final_lines.append("\n    location /inventory/ {\n")
-            final_lines.append("        alias /var/www/html/inventory/;\n")
-            final_lines.append("        try_files $uri $uri/ /inventory/index.html =404;\n")
-            final_lines.append("        add_header Cache-Control \"no-cache, no-store, must-revalidate\";\n")
-            final_lines.append("        add_header Pragma \"no-cache\";\n")
-            final_lines.append("        add_header Expires \"0\";\n")
-            final_lines.append("    }\n")
-            inserted = True
+    # """
 
-    with open(NGINX_CONF, "w") as f:
-        f.writelines(final_lines)
+    new_content = content[:start_idx] + middle + content[end_idx:]
     
-    print("Successfully re-aligned Nginx blocks.")
+    with open("/tmp/teqmates_fixed_final", "w") as f:
+        f.write(new_content)
+    
+    print("Fixed Nginx config written.")
 
 if __name__ == "__main__":
     final_fix()

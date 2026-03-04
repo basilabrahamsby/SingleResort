@@ -84,16 +84,35 @@ class KitchenProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchActiveOrders() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+  Future<void> fetchActiveOrders({int? employeeId, bool silent = false}) async {
+    if (!silent) {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+    }
 
     try {
       final response = await _apiService.getFoodOrders();
       if (response.statusCode == 200) {
         final List<dynamic> data = response.data;
-        final allKots = data.map((item) => KOT.fromJson(item)).toList();
+        var allKots = data.map((item) => KOT.fromJson(item)).toList();
+        
+        // Filter by assigned employee if provided
+        if (employeeId != null) {
+            print("[KITCHEN] Received ${allKots.length} total KOTs. Filtering for Employee: $employeeId");
+            for (var k in allKots) {
+              print("[KITCHEN] KOT #${k.id}: Status=${k.status}, PrepBy=${k.preparedById}, AssignedBy=${k.assignedEmployeeId}");
+            }
+            allKots = allKots.where((kot) => 
+              kot.assignedEmployeeId == employeeId || 
+              kot.preparedById == employeeId ||
+              (kot.status.toLowerCase() == 'pending' && (kot.preparedById == null || kot.preparedById == 0))
+            ).toList();
+            print("[KITCHEN] After filtering: ${allKots.length} KOTs remaining");
+        } else {
+            print("[KITCHEN] No employeeId provided. Showing all ${allKots.length} KOTs.");
+        }
+
         _activeKots = allKots
             .where((kot) => 
                 kot.status.toLowerCase() != 'completed' && 
@@ -110,19 +129,25 @@ class KitchenProvider extends ChangeNotifier {
         _error = "Failed to fetch orders";
       }
     } catch (e) {
-      _error = e.toString();
+      if (!silent) _error = e.toString();
       print("KitchenProvider error: $e");
     } finally {
-      _isLoading = false;
+      if (!silent) {
+        _isLoading = false;
+      }
       notifyListeners();
     }
   }
 
-  Future<void> fetchOrderHistory() => fetchActiveOrders();
+  Future<void> fetchOrderHistory({int? employeeId}) => fetchActiveOrders(employeeId: employeeId);
 
-  Future<bool> updateStatus(int orderId, String newStatus) async {
+  Future<bool> updateStatus(int orderId, String newStatus, {String? billingStatus}) async {
     try {
-      final response = await _apiService.updateFoodOrder(orderId, {'status': newStatus});
+      final payload = {'status': newStatus};
+      if (billingStatus != null) {
+        payload['billing_status'] = billingStatus;
+      }
+      final response = await _apiService.updateFoodOrder(orderId, payload);
       if (response.statusCode == 200) {
         // Update local state
         final index = _activeKots.indexWhere((kot) => kot.id == orderId);

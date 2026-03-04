@@ -10,6 +10,7 @@ class FoodOrderCreate(BaseModel):
     room_id: int
     amount: float
     assigned_employee_id: Optional[int] = None
+    prepared_by_id: Optional[int] = None
     items: List[FoodOrderItemCreate]
     status: Optional[str] = "pending"
     billing_status: Optional[str] = "unbilled"
@@ -32,6 +33,7 @@ class FoodOrderOut(BaseModel):
     amount: Optional[float] = 0.0
     status: str
     assigned_employee_id: Optional[int] = None
+    prepared_by_id: Optional[int] = None
     billing_status: str 
     payment_method: Optional[str] = None
     order_type: Optional[str] = "dine_in"

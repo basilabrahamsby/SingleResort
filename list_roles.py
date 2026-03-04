@@ -1,13 +1,15 @@
-import sys
-import os
-sys.path.append(os.getcwd())
-
 from app.database import SessionLocal
-from app.models.user import Role
+from app.models.role import Role
 
-db = SessionLocal()
+def list_roles():
+    db = SessionLocal()
+    try:
+        roles = db.query(Role).all()
+        print("ROLES IN SYSTEM:")
+        for r in roles:
+            print(f"ID: {r.id} | Name: {r.name}")
+    finally:
+        db.close()
 
-print("=== ALL ROLES ===")
-roles = db.query(Role).all()
-for r in roles:
-    print(f"ID: {r.id} - Name: '{r.name}'")
+if __name__ == "__main__":
+    list_roles()

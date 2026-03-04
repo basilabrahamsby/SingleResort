@@ -153,12 +153,18 @@ def create_food_order(db: Session, order_data: FoodOrderCreate):
             else:
                 booking_id = b_id
 
+    gst_amount = amount * 0.05
+    total_with_gst = amount + gst_amount
+
     order = FoodOrder(
         room_id=order_data.room_id,
         booking_id=booking_id,
         package_booking_id=package_booking_id,
         amount=amount,
+        gst_amount=gst_amount,
+        total_with_gst=total_with_gst,
         assigned_employee_id=order_data.assigned_employee_id,
+        prepared_by_id=order_data.prepared_by_id,
         status=status,
         billing_status=billing_status,
         order_type=order_type,
@@ -360,6 +366,8 @@ def update_food_order(db: Session, order_id: int, update_data: FoodOrderUpdate):
         order.room_id = update_data.room_id
     if update_data.amount is not None:
         order.amount = update_data.amount
+        order.gst_amount = order.amount * 0.05
+        order.total_with_gst = order.amount + order.gst_amount
     if update_data.assigned_employee_id is not None:
         order.assigned_employee_id = update_data.assigned_employee_id
     if update_data.status is not None:

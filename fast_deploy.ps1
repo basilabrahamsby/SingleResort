@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $baseDir = "C:\releasing\New Orchid"
-$backendZip = "$baseDir\backend_deploy.zip"
+$backendZip = "$baseDir\resortapp_deploy.zip"
 $dashboardZip = "$baseDir\dashboard_deploy.zip"
 $userendZip = "$baseDir\userend_deploy.zip"
 
@@ -40,14 +40,12 @@ $deployScript = @"
 chmod +x ~/orchid-repo/update_nginx.sh
 
 # 1. Backend Deployment
+# 1. Backend Deployment
 echo '[Backend] Extracting and deploying...'
-sudo rm -rf ~/orchid-repo/ResortApp
-# Use python unzip if available or unzip command
-unzip -q -o ~/orchid-repo/backend_deploy.zip -d ~/orchid-repo/ResortApp_temp
-# The zip structure might be ResortApp/... or just files. 
-# My python script created: zipf.write(full_path, os.path.join("ResortApp", rel_path))
-# So it has ResortApp folder inside.
-sudo rsync -av ~/orchid-repo/ResortApp_temp/ResortApp/ /var/www/inventory/ResortApp/
+sudo rm -rf ~/orchid-repo/ResortApp_temp
+unzip -q -o ~/orchid-repo/resortapp_deploy.zip -d ~/orchid-repo/ResortApp_temp
+# Copy files into the existing directory, preserving venv and .env
+sudo cp -rv ~/orchid-repo/ResortApp_temp/ResortApp/* /var/www/inventory/ResortApp/
 sudo rm -rf ~/orchid-repo/ResortApp_temp
 
 # Fix permissions
@@ -57,11 +55,11 @@ echo '[Backend] Running Migrations & Fixes...'
 cd /var/www/inventory/ResortApp/
 # Install dependencies if requirements changed (optional, skipping for speed unless needed)
 # sudo pip install -r requirements.txt
-sudo python3 migrate_database.py
-sudo python3 create_activity_log_table.py
+sudo ./venv/bin/python3 migrate_database.py
+sudo ./venv/bin/python3 create_activity_log_table.py
 # Run these specific fixes as requested in previous full deploy
-if [ -f "fix_rental_prices_by_id.py" ]; then sudo python3 fix_rental_prices_by_id.py; fi
-if [ -f "fix_payable_status.py" ]; then sudo python3 fix_payable_status.py; fi
+if [ -f "fix_rental_prices_by_id.py" ]; then sudo ./venv/bin/python3 fix_rental_prices_by_id.py; fi
+if [ -f "fix_payable_status.py" ]; then sudo ./venv/bin/python3 fix_payable_status.py; fi
 
 # 2. Userend Deployment
 echo '[Userend] Extracting and deploying...'

@@ -7,6 +7,9 @@ import 'package:intl/intl.dart';
 import 'package:orchid_employee/presentation/providers/inventory_provider.dart';
 import 'package:orchid_employee/presentation/providers/kitchen_provider.dart';
 import 'package:orchid_employee/presentation/providers/auth_provider.dart';
+import 'service_request_dialogs.dart';
+import 'package:orchid_employee/presentation/providers/attendance_provider.dart';
+import 'package:orchid_employee/presentation/screens/housekeeping/checkout_verification_dialog.dart';
 
 class ServiceRequestsScreen extends StatefulWidget {
   const ServiceRequestsScreen({super.key});
@@ -179,12 +182,14 @@ class _ServiceRequestsScreenState extends State<ServiceRequestsScreen> {
 
           // Requests List
           Expanded(
-            child: requestProvider.isLoading
+            child: (requestProvider.isLoading && requestProvider.requests.isEmpty)
                 ? const Center(child: CircularProgressIndicator())
                 : requestProvider.error != null
                     ? Center(child: Text(requestProvider.error!))
                     : RefreshIndicator(
-                        onRefresh: () => requestProvider.fetchRequests(),
+                        onRefresh: () async {
+                           await requestProvider.fetchRequests();
+                        },
                         child: filteredRequests.isEmpty
                             ? Center(
                                 child: Column(
@@ -207,7 +212,23 @@ class _ServiceRequestsScreenState extends State<ServiceRequestsScreen> {
                                   final request = filteredRequests[index];
                                   return _RequestCard(
                                     request: request,
-                                    onUpdateStatus: (req, status) => requestProvider.updateRequestStatus(req.id, status),
+                                    onUpdateStatus: (req, status) async {
+                                      final ok = await requestProvider.updateRequestStatus(req.id, status);
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(ok
+                                              ? 'Status updated to ${status.toUpperCase()}'
+                                              : 'Failed to update: ${requestProvider.error ?? "Unknown error"}'),
+                                            backgroundColor: ok ? Colors.green.shade700 : Colors.red.shade700,
+                                            behavior: SnackBarBehavior.floating,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                            duration: Duration(seconds: ok ? 2 : 4),
+                                          ),
+                                        );
+                                      }
+                                      return ok;
+                                    },
                                     onAssign: () => _showAssignDialog(request),
                                     priorityColor: _getPriorityColor(request.priority),
                                     typeIcon: _getTypeIcon(request.type),
@@ -264,9 +285,9 @@ class _StatChip extends StatelessWidget {
   }
 }
 
-class _RequestCard extends StatelessWidget {
+class _RequestCard extends StatefulWidget {
   final ServiceRequest request;
-  final Function(ServiceRequest, String) onUpdateStatus;
+  final Future<bool> Function(ServiceRequest, String) onUpdateStatus;
   final VoidCallback onAssign;
   final Color priorityColor;
   final IconData typeIcon;
@@ -280,7 +301,34 @@ class _RequestCard extends StatelessWidget {
   });
 
   @override
+  State<_RequestCard> createState() => _RequestCardState();
+}
+
+class _RequestCardState extends State<_RequestCard> {
+  bool _isUpdating = false;
+
+  Future<void> _doUpdate(String status, [String? billingStatus]) async {
+    if (_isUpdating) return;
+    setState(() => _isUpdating = true);
+    try {
+      final requestProvider = context.read<ServiceRequestProvider>();
+      final empId = context.read<AuthProvider>().employeeId;
+      await requestProvider.updateRequestStatus(
+        widget.request.id, 
+        status, 
+        employeeId: empId,
+        billingStatus: billingStatus,
+      );
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final request = widget.request;
+    final priorityColor = widget.priorityColor;
+    final typeIcon = widget.typeIcon;
     final minutesAgo = DateTime.now().difference(request.createdAt).inMinutes;
     final timeAgo = minutesAgo < 60
         ? "$minutesAgo min ago"
@@ -408,7 +456,7 @@ class _RequestCard extends StatelessWidget {
                       builder: (context, auth, _) {
                          if (auth.role == UserRole.manager || auth.role == UserRole.kitchen) {
                            return InkWell(
-                             onTap: onAssign,
+                             onTap: widget.onAssign,
                              child: Text(
                                request.employeeId != null ? "Change" : "Assign",
                                style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 13),
@@ -424,11 +472,67 @@ class _RequestCard extends StatelessWidget {
 
                 // Action Buttons
                 if (request.status.toLowerCase() == 'pending')
-                  Row(
+                  _isUpdating
+                  ? const Center(child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      child: CircularProgressIndicator(strokeWidth: 2)))
+                  : Row(
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () => onUpdateStatus(request, 'in_progress'),
+                          onPressed: () {
+                              if (!context.read<AttendanceProvider>().isClockedIn) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Action Denied: You must Clock In first")));
+                                return;
+                              }
+
+                              final isFoodService = request.type.toLowerCase().contains('food') || 
+                                                    request.description.toLowerCase().contains('food') ||
+                                                    request.type.toLowerCase() == 'delivery';
+
+                               if (isFoodService) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => DeliveryStartDialog(
+                                      request: request,
+                                      onConfirm: () {
+                                        final empId = context.read<AuthProvider>().employeeId;
+                                        _doUpdate('in_progress');
+                                      },
+                                    ),
+                                  );
+                                  return;
+                               }
+
+                              showDialog(
+                                context: context,
+                                builder: (_) => PickInventoryDialog(
+                                  requestId: request.id,
+                                  roomNumber: request.roomNumber,
+                                  preAssignedItems: request.refillItems,
+                                  onStart: (items) async {
+                                    if (items.isNotEmpty) {
+                                      final groupedItems = <int, List<Map<String, dynamic>>>{};
+                                      for (var item in items) {
+                                        final locId = item['location_id'] as int?;
+                                        if (locId != null) {
+                                          groupedItems.putIfAbsent(locId, () => []).add(item);
+                                        }
+                                      }
+
+                                      for (var entry in groupedItems.entries) {
+                                        await context.read<InventoryProvider>().createStockIssue(
+                                          sourceLocationId: entry.key,
+                                          items: entry.value,
+                                          notes: "Used for Service Request #${request.id} (Room ${request.roomNumber})",
+                                        );
+                                      }
+                                    }
+                                    _doUpdate('in_progress');
+                                  },
+                                ),
+                              );
+                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
                             foregroundColor: Colors.white,
@@ -444,7 +548,7 @@ class _RequestCard extends StatelessWidget {
                       const SizedBox(width: 12),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () => onUpdateStatus(request, 'cancelled'),
+                          onPressed: () => _doUpdate('cancelled'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.red,
                             foregroundColor: Colors.white,
@@ -460,10 +564,73 @@ class _RequestCard extends StatelessWidget {
                     ],
                   ),
                 if (request.status.toLowerCase().replaceAll('_', ' ') == 'in progress')
-                  SizedBox(
+                  _isUpdating
+                  ? const Center(child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      child: CircularProgressIndicator(strokeWidth: 2)))
+                  : SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => onUpdateStatus(request, 'completed'),
+                      onPressed: () {
+                          final desc = request.description.toLowerCase();
+                          if (desc.contains("checkout") || request.type.toLowerCase() == 'checkout') {
+                             showDialog(
+                               context: context,
+                               builder: (_) => CheckoutVerificationDialog(
+                                 roomNumber: request.roomNumber,
+                                 onSuccess: () => _doUpdate('completed', null),
+                               )
+                             );
+                             return;
+                          }
+
+                          final isFood = request.type.toLowerCase().contains('food') || 
+                                         request.description.toLowerCase().contains('food') ||
+                                         request.type.toLowerCase() == 'delivery';
+
+                          showDialog(
+                            context: context,
+                            builder: (_) => CompleteServiceDialog(
+                               requestId: request.id,
+                               roomNumber: request.roomNumber,
+                               refillItems: request.refillItems,
+                               isFoodService: isFood,
+                               currentBillingStatus: request.billingStatus,
+                               foodOrderAmount: request.foodOrderAmount,
+                               foodOrderGst: request.foodOrderGst,
+                               foodOrderTotal: request.foodOrderTotal,
+                               onJustComplete: (billingStatus) => _doUpdate('completed', billingStatus),
+                               onReturn: (items, destId, billingStatus) async {
+                                  final provider = context.read<InventoryProvider>();
+                                  final locs = provider.locations;
+                                  
+                                  dynamic roomLoc;
+                                  try {
+                                    roomLoc = locs.firstWhere((l) => l['name'] == "Room ${request.roomNumber}");
+                                  } catch (e) {
+                                    roomLoc = null;
+                                  }
+                                  
+                                  if (roomLoc == null) {
+                                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Room location not found in inventory system. Cannot return items.")));
+                                     return; 
+                                  }
+
+                                  await provider.createStockIssue(
+                                     sourceLocationId: roomLoc['id'],
+                                     destinationLocationId: destId,
+                                     items: items.map((i) => {
+                                        'item_id': i['item_id'],
+                                        'issued_quantity': i['quantity'],
+                                        'unit': i['unit']
+                                     }).toList(),
+                                     notes: "Return from Service Request #${request.id}"
+                                  );
+                                  _doUpdate('completed', billingStatus);
+                               }
+                            )
+                          );
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,

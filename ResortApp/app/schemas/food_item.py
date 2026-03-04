@@ -16,6 +16,12 @@ class FoodItemCreate(BaseModel):
     price: float
     available: bool
     category_id: int
+    always_available: bool = True
+    available_from_time: Optional[str] = None
+    available_to_time: Optional[str] = None
+    time_wise_prices: Optional[str] = None
+    room_service_price: Optional[float] = None
+    extra_inventory_items: Optional[str] = None
 
 class FoodItemUpdate(BaseModel):
     name: Optional[str] = None
@@ -23,6 +29,12 @@ class FoodItemUpdate(BaseModel):
     price: Optional[float] = None
     available: Optional[bool] = None
     category_id: Optional[int] = None
+    always_available: Optional[bool] = None
+    available_from_time: Optional[str] = None
+    available_to_time: Optional[str] = None
+    time_wise_prices: Optional[str] = None
+    room_service_price: Optional[float] = None
+    extra_inventory_items: Optional[str] = None
 
 class FoodItemOut(BaseModel):
     id: int
@@ -31,6 +43,12 @@ class FoodItemOut(BaseModel):
     price: float
     available: bool
     category_id: int
+    always_available: bool = True
+    available_from_time: Optional[str] = None
+    available_to_time: Optional[str] = None
+    time_wise_prices: Optional[str] = None
+    room_service_price: Optional[float] = None
+    extra_inventory_items: Optional[str] = None
     images: List[FoodItemImageOut] = []
     category: Optional[FoodCategoryOut] = None
 

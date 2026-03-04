@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -14,6 +16,61 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final LocalAuthentication auth = LocalAuthentication();
+  bool _canCheckBiometrics = false;
+  bool _hasSavedCredentials = false;
+  bool _rememberMe = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometrics();
+  }
+
+  Future<void> _checkBiometrics() async {
+    bool canCheckBiometrics;
+    try {
+      canCheckBiometrics = await auth.canCheckBiometrics || await auth.isDeviceSupported();
+    } catch (e) {
+      canCheckBiometrics = false;
+    }
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    bool hasSavedCredentials = await authProvider.hasSavedCredentials();
+
+    if (!mounted) return;
+
+    setState(() {
+      _canCheckBiometrics = canCheckBiometrics;
+      _hasSavedCredentials = hasSavedCredentials;
+    });
+  }
+
+  Future<void> _authenticateWithBiometrics() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    bool authenticated = false;
+    if (kIsWeb) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Biometrics not supported in web.')));
+       return;
+    }
+    
+    try {
+      authenticated = await auth.authenticate(
+        localizedReason: 'Scan your fingerprint (or face) to authenticate',
+      );
+    } catch (e) {
+       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    }
+
+    if (authenticated && mounted) {
+      final success = await authProvider.loginWithSavedCredentials();
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to login with saved credentials.')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +147,23 @@ class _LoginScreenState extends State<LoginScreen> {
                         validator: (value) =>
                             value?.isEmpty ?? true ? 'Please enter your password' : null,
                       ),
-                      const SizedBox(height: 24),
+                      
+                      // Remember Me Checkbox
+                      Row(
+                        children: [
+                          Checkbox(
+                            value: _rememberMe,
+                            onChanged: (value) {
+                              setState(() {
+                                _rememberMe = value ?? false;
+                              });
+                            },
+                          ),
+                          const Text('Remember me (Enable Biometrics)'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      
                       SizedBox(
                         width: double.infinity,
                         height: 48,
@@ -102,6 +175,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     final success = await authProvider.login(
                                       _emailController.text,
                                       _passwordController.text,
+                                      saveCredentials: _rememberMe,
                                     );
                                     if (success && mounted) {
                                        // Navigation handled by AuthenticationWrapper
@@ -117,6 +191,21 @@ class _LoginScreenState extends State<LoginScreen> {
                               : const Text('Sign In'),
                         ),
                       ),
+                      
+                      if (_canCheckBiometrics && _hasSavedCredentials) ...[
+                        const SizedBox(height: 24),
+                        const Divider(),
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          onPressed: _authenticateWithBiometrics,
+                          icon: const Icon(Icons.fingerprint, size: 32),
+                          label: const Text('Login with Biometrics'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                            foregroundColor: const Color(0xFF1B5E20),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

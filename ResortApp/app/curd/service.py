@@ -824,15 +824,45 @@ def update_assigned_service_status(db: Session, assigned_id: int, update_data: A
                                     unit_price=inv_item.unit_price,
                                     total_amount=0,  # Internal transfer
                                     reference_number=f"LNDRY-COL-{assigned_id}",
-                                    department="Housekeeping",
+                                    department=laundry_loc.name,
+                                    destination_location_id=laundry_loc.id,
                                     notes=f"Auto-collected Dirty Linen from Room {assigned.room.number if assigned.room else 'Unknown'} (Service: {assigned.service.name}) -> To {laundry_loc.name}",
                                     created_by=None, # System
                                     created_at=datetime.utcnow()
                                 )
                                 db.add(laundry_txn)
                                 
-                                # Optional: If your system tracks stock PER LOCATION, you would add an entry to LocationStock here.
-                                # Assuming simplified global stock + transaction logs for now.
+                                # Add to LocationStock for the Laundry Location
+                                from app.models.inventory import LocationStock
+                                laundry_stock = db.query(LocationStock).filter(
+                                    LocationStock.location_id == laundry_loc.id,
+                                    LocationStock.item_id == inv_item.id
+                                ).first()
+                                
+                                if laundry_stock:
+                                    laundry_stock.quantity += qty_defined
+                                    laundry_stock.last_updated = datetime.utcnow()
+                                else:
+                                    new_laundry_stock = LocationStock(
+                                        location_id=laundry_loc.id,
+                                        item_id=inv_item.id,
+                                        quantity=qty_defined,
+                                        last_updated=datetime.utcnow()
+                                    )
+                                    db.add(new_laundry_stock)
+                                
+                                # Add to LaundryLog to appear in the Laundry Tracking tab
+                                from app.models.inventory import LaundryLog
+                                laundry_log = LaundryLog(
+                                    item_id=inv_item.id,
+                                    quantity=qty_defined,
+                                    status="DIRTY",
+                                    movement_type="IN",
+                                    source=f"Room {assigned.room.number if assigned.room else 'Unknown'}",
+                                    reference_id=f"SVC-{assigned_id}",
+                                    notes=f"Auto-collected during service {assigned.service.name}"
+                                )
+                                db.add(laundry_log)
                     else:
                         print("[WARNING] No 'Laundry' location found. Cannot auto-collect dirty linens.")
                 # -------------------------------------------------------

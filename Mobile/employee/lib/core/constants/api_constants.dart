@@ -4,7 +4,8 @@ class ApiConstants {
   // it means the server code hasn't been updated yet.
   static const String baseUrl = 'https://teqmates.com/orchidapi/api';
   static const String imageBaseUrl = 'https://teqmates.com/orchidapi';
-  // static const String baseUrl = 'http://localhost:8000/api'; // Use for local testing
+  // static const String baseUrl = 'http://localhost:8011/api'; // LOCAL
+  // static const String imageBaseUrl = 'http://localhost:8011'; // LOCAL
   static const String login = '/auth/login';
   static const String profile = '/auth/me';
   

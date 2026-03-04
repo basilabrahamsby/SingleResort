@@ -5,7 +5,7 @@ import api from "../services/api";
 import API from "../services/api";
 import { Bar, Line } from "react-chartjs-2";
 import "chart.js/auto";
-import { ChefHat, X, Package, Home, UtensilsCrossed, Truck, CreditCard, CheckCircle, XCircle } from "lucide-react";
+import { ChefHat, X, Package, Home, UtensilsCrossed, Truck, CreditCard, CheckCircle, XCircle, Clock, TrendingUp, Plus, Trash2, ShoppingCart } from "lucide-react";
 import CountUp from "react-countup";
 import { toast } from "react-hot-toast";
 import { getImageUrl } from "../utils/imageUtils";
@@ -71,6 +71,7 @@ export default function FoodOrders() {
   const [selectedItems, setSelectedItems] = useState([]);
   const [roomId, setRoomId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
+  const [preparedById, setPreparedById] = useState("");
   const [amount, setAmount] = useState(0);
   const [orderType, setOrderType] = useState("dine_in"); // "dine_in" or "room_service"
   const [deliveryRequest, setDeliveryRequest] = useState("");
@@ -86,6 +87,7 @@ export default function FoodOrders() {
   const [showDeliveryRequestModal, setShowDeliveryRequestModal] = useState(null);
   const [deliveryRequestText, setDeliveryRequestText] = useState("");
   const [showCompleteModal, setShowCompleteModal] = useState(null);
+  const [viewingFoodItemDetails, setViewingFoodItemDetails] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState("unpaid");
   const [paymentFilter, setPaymentFilter] = useState("");
 
@@ -108,6 +110,10 @@ export default function FoodOrders() {
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [editCategoryId, setEditCategoryId] = useState(null);
+
+  // Modal states for creation forms
+  const [showFoodOrderModal, setShowFoodOrderModal] = useState(false);
+  const [showFoodItemModal, setShowFoodItemModal] = useState(false);
 
   // Extra inventory items for food item
   const [extraInventoryItems, setExtraInventoryItems] = useState([]);
@@ -581,6 +587,49 @@ export default function FoodOrders() {
     });
   };
 
+  // Calculate specific food item stats
+  const getFoodItemStats = (foodItemId) => {
+    const itemOrders = allOrdersForDashboard.filter(order =>
+      order.status === "completed" &&
+      order.items && order.items.some(it => it.food_item_id === foodItemId)
+    );
+
+    let totalQuantity = 0;
+    let totalRevenue = 0;
+    const hourlySales = new Array(24).fill(0);
+    const dailySales = {};
+
+    itemOrders.forEach(order => {
+      const item = order.items.find(it => it.food_item_id === foodItemId);
+      if (item) {
+        const qty = item.quantity || 0;
+        totalQuantity += qty;
+        totalRevenue += (item.food_item?.price || 0) * qty;
+
+        if (order.created_at) {
+          const dateObj = new Date(order.created_at);
+          const hour = dateObj.getHours();
+          hourlySales[hour] += qty;
+
+          const dateStr = dateObj.toISOString().split('T')[0];
+          dailySales[dateStr] = (dailySales[dateStr] || 0) + qty;
+        }
+      }
+    });
+
+    const topDay = Object.entries(dailySales).sort((a, b) => b[1] - a[1])[0];
+    const peakHour = hourlySales.indexOf(Math.max(...hourlySales));
+
+    return {
+      totalQuantity,
+      totalRevenue,
+      hourlySales,
+      dailySales: Object.entries(dailySales).sort((a, b) => a[0].localeCompare(b[0])).slice(-7), // Last 7 days
+      topDay: topDay ? topDay[0] : "N/A",
+      peakHour: peakHour !== -1 ? `${peakHour}:00` : "N/A"
+    };
+  };
+
   // Fetch food order requests (service requests with food_order_id)
   const fetchFoodOrderRequests = async () => {
     try {
@@ -702,13 +751,26 @@ export default function FoodOrders() {
     setRoomServicePrice(item.room_service_price || "");
     setSelectedCategory(item.category_id);
     setAvailable(item.available);
-    setAlwaysAvailable(item.always_available || false);
+    setAlwaysAvailable(item.always_available === true);
     setImagePreviews(item.images?.map((img) => getImageUrl(img.image_url)) || []);
     setImages([]);
     setAvailableFromTime(item.available_from_time || "");
     setAvailableToTime(item.available_to_time || "");
-    setExtraInventoryItems(item.extra_inventory_items || []);
-    setTimeWisePrices(item.time_wise_prices || []);
+
+    // Parse extra inventory items if it's a string
+    let extraItems = item.extra_inventory_items || [];
+    if (typeof extraItems === 'string') {
+      try { extraItems = JSON.parse(extraItems); } catch (e) { extraItems = []; }
+    }
+    setExtraInventoryItems(extraItems);
+
+    // Parse time wise prices if it's a string
+    let twp = item.time_wise_prices || [];
+    if (typeof twp === 'string') {
+      try { twp = JSON.parse(twp); } catch (e) { twp = []; }
+    }
+    setTimeWisePrices(twp);
+    setShowFoodItemModal(true); // Open modal for editing
   };
 
   const resetFoodForm = () => {
@@ -726,6 +788,7 @@ export default function FoodOrders() {
     setAvailableFromTime("");
     setAvailableToTime("");
     setTimeWisePrices([]);
+    setShowFoodItemModal(false); // Close modal on reset/cancel
   };
 
   const handleFoodSubmit = async (e) => {
@@ -791,6 +854,7 @@ export default function FoodOrders() {
       }
       fetchFoodItems();
       resetFoodForm();
+      setShowFoodItemModal(false); // Ensure modal is closed
     } catch (err) {
       console.error("Failed to save food item", err);
       toast.error("Failed to save food item.");
@@ -920,7 +984,7 @@ export default function FoodOrders() {
           console.error("Error fetching rooms:", err);
           return { data: [] };
         }),
-        api.get("/employees").catch(err => {
+        api.get("/employees?limit=1000").catch(err => {
           console.error("Error fetching employees:", err);
           return { data: [] };
         }),
@@ -1102,25 +1166,66 @@ export default function FoodOrders() {
     calculateAmount(updated);
   };
 
-  const calculateAmount = (items) => {
+  // Helper to get active price based on time
+  const getItemPriceAtTime = (food, oType = "dine_in") => {
+    if (!food) return 0;
+
+    // Check if time-wise prices exist
+    let twp = food.time_wise_prices;
+    if (twp) {
+      if (typeof twp === 'string') {
+        try { twp = JSON.parse(twp); } catch (e) { twp = []; }
+      }
+
+      if (Array.isArray(twp) && twp.length > 0) {
+        const now = new Date();
+        const currentTimeString = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+
+        for (const rule of twp) {
+          const { from_time, to_time, price: rulePrice } = rule;
+
+          if (from_time <= to_time) {
+            if (currentTimeString >= from_time && currentTimeString <= to_time) {
+              return parseFloat(rulePrice);
+            }
+          } else {
+            // Over midnight range (e.g., 22:00 to 02:00)
+            if (currentTimeString >= from_time || currentTimeString <= to_time) {
+              return parseFloat(rulePrice);
+            }
+          }
+        }
+      }
+    }
+
+    // Return order type specific price if no time-wise match
+    if (oType === "room_service" && food.room_service_price) {
+      return parseFloat(food.room_service_price);
+    }
+
+    return parseFloat(food.price) || 0;
+  };
+
+  const calculateAmount = (items, oType = orderType) => {
     let total = 0;
     items.forEach((item) => {
       const food = foodItems.find((f) => f.id === parseInt(item.food_item_id));
-      if (food) total += food.price * item.quantity;
+      if (food) total += getItemPriceAtTime(food, oType) * item.quantity;
     });
     setAmount(total);
   };
 
   const handleSubmit = async () => {
-    if (!roomId || !employeeId || selectedItems.length === 0) {
-      alert("Please select room, employee, and at least one food item.");
+    if (!roomId || !preparedById || (orderType === "room_service" && !employeeId) || selectedItems.length === 0) {
+      alert("Please select room, kitchen assignment, " + (orderType === "room_service" ? "delivery person, " : "") + "and at least one food item.");
       return;
     }
 
     const payload = {
       room_id: parseInt(roomId),
       billing_status: "unbilled",
-      assigned_employee_id: parseInt(employeeId),
+      assigned_employee_id: orderType === "room_service" && employeeId ? parseInt(employeeId) : null,
+      prepared_by_id: parseInt(preparedById),
       amount,
       order_type: orderType,
       delivery_request: orderType === "room_service" && deliveryRequest ? deliveryRequest : null,
@@ -1148,9 +1253,11 @@ export default function FoodOrders() {
       setSelectedItems([]);
       setRoomId("");
       setEmployeeId("");
+      setPreparedById("");
       setAmount(0);
       setOrderType("dine_in");
       setDeliveryRequest("");
+      setShowFoodOrderModal(false); // Close modal on success
 
       // Clear filters to ensure visibility
       setStatusFilter("");
@@ -2022,176 +2129,278 @@ export default function FoodOrders() {
               </div>
             </div>
 
-            {/* Create New Order Section */}
-            <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-              <div className="mb-6">
-                <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center gap-2">
-                  <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-                  Create New Food Order
-                </h3>
-                <p className="text-sm text-gray-500">Quickly create orders for checked-in guests</p>
-              </div>
-
-              <div className="space-y-5">
-                {/* Room and Employee Selection */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Room *</label>
-                    <select
-                      value={roomId}
-                      onChange={(e) => setRoomId(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition text-black"
-                    >
-                      <option value="">Choose a room...</option>
-                      {rooms.length === 0 ? (
-                        <option disabled>No checked-in rooms available</option>
-                      ) : (
-                        rooms.map((room) => (
-                          <option key={room.id} value={room.id}>
-                            Room {room.number || room.room_number || room.id}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Assign Employee * {employees.length > 0 && <span className="text-xs text-gray-400">({employees.length} found)</span>}
-                    </label>
-                    <select
-                      value={employeeId}
-                      onChange={(e) => setEmployeeId(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition text-black font-medium"
-                    >
-                      <option value="">{employees.length === 0 ? "Searching for employees..." : "Choose an employee..."}</option>
-                      {Array.isArray(employees) && [...employees]
-                        .filter(emp => emp && emp.id)
-                        .sort((a, b) => {
-                          const aOnline = a.status === 'on_duty' || a.is_clocked_in;
-                          const bOnline = b.status === 'on_duty' || b.is_clocked_in;
-                          if (aOnline && !bOnline) return -1;
-                          if (!aOnline && bOnline) return 1;
-                          return 0;
-                        })
-                        .map((emp) => {
-                          const isOnline = emp.status === 'on_duty' || emp.is_clocked_in;
-                          return (
-                            <option
-                              key={emp.id}
-                              value={emp.id}
-                              style={{ color: isOnline ? "#16a34a" : "inherit", fontWeight: isOnline ? "bold" : "normal" }}
-                            >
-                              {emp.name || `Employee ${emp.id}`} {isOnline ? " 🟢 (Online)" : `(${emp.status || 'off_duty'})`}
-                            </option>
-                          );
-                        })}
-                    </select>
-                  </div>
+            {/* Create New Order Button */}
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowFoodOrderModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center gap-2 group"
+              >
+                <div className="bg-white/20 p-1.5 rounded-lg group-hover:rotate-12 transition-transform">
+                  <Plus size={20} />
                 </div>
+                <span>Create New Order</span>
+              </button>
+            </div>
 
-                {/* Order Type Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Order Type *</label>
-                  <div className="grid grid-cols-2 gap-3">
+            {/* Create New Order Modal */}
+            {showFoodOrderModal && (
+              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 text-black">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                  {/* Modal Header */}
+                  <div className="bg-indigo-700 p-6 text-white flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/20 p-2 rounded-lg">
+                        <UtensilsCrossed size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-bold">Create New Food Order</h3>
+                        <p className="text-indigo-100 text-sm">Create orders for checked-in guests</p>
+                      </div>
+                    </div>
                     <button
-                      type="button"
-                      onClick={() => {
-                        setOrderType("dine_in");
-                        setDeliveryRequest("");
-                      }}
-                      className={`flex items-center justify-center gap-2 p-4 border-2 rounded-lg transition-all ${orderType === "dine_in"
-                        ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm"
-                        : "border-gray-300 hover:border-indigo-300 text-gray-700 bg-white"
-                        }`}
+                      onClick={() => setShowFoodOrderModal(false)}
+                      className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition-colors"
                     >
-                      <UtensilsCrossed size={20} />
-                      <span className="font-semibold">Dine In</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOrderType("room_service")}
-                      className={`flex items-center justify-center gap-2 p-4 border-2 rounded-lg transition-all ${orderType === "room_service"
-                        ? "border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm"
-                        : "border-gray-300 hover:border-indigo-300 text-gray-700 bg-white"
-                        }`}
-                    >
-                      <Home size={20} />
-                      <span className="font-semibold">Room Service</span>
+                      <X size={20} />
                     </button>
                   </div>
-                </div>
 
-                {/* Delivery Request (only for room service) */}
-                {orderType === "room_service" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                      <Truck size={16} />
-                      Delivery Instructions (Optional)
-                    </label>
-                    <textarea
-                      placeholder="Add delivery instructions, timing preferences, or special notes..."
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
-                      rows="3"
-                      value={deliveryRequest}
-                      onChange={(e) => setDeliveryRequest(e.target.value)}
-                    />
-                  </div>
-                )}
-
-                {/* Food Items Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Food Items *</label>
-                  <div className="space-y-3">
-                    {selectedItems.map((item, index) => (
-                      <div key={index} className="flex gap-3 items-center bg-gray-50 p-3 rounded-lg">
+                  {/* Modal Content */}
+                  <div className="overflow-y-auto p-6 space-y-6">
+                    {/* Room and Employee Selection */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">Select Room *</label>
                         <select
-                          value={item.food_item_id}
-                          onChange={(e) => handleItemChange(index, "food_item_id", e.target.value)}
-                          className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-black"
+                          value={roomId}
+                          onChange={(e) => setRoomId(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 transition text-black"
                         >
-                          <option value="">Select food item...</option>
-                          {foodItems.map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.name} - ₹{f.price}
-                            </option>
-                          ))}
+                          <option value="">Choose a room...</option>
+                          {rooms.length === 0 ? (
+                            <option disabled>No checked-in rooms available</option>
+                          ) : (
+                            rooms.map((room) => (
+                              <option key={room.id} value={room.id}>
+                                Room {room.number || room.room_number || room.id}
+                              </option>
+                            ))
+                          )}
                         </select>
-                        <input
-                          type="number"
-                          min={1}
-                          value={item.quantity}
-                          onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
-                          placeholder="Qty"
-                          className="w-20 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center"
+                      </div>
+                      <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Assign to Kitchen * {employees.length > 0 && <span className="text-xs text-gray-400 font-normal">({employees.filter(e => {
+                            const r = (e.role || '').toLowerCase();
+                            const n = (e.name || '').toLowerCase();
+                            return r.includes('kitchen') || r.includes('chef') || r.includes('cook') || r.includes('kitch') || n.includes('chef') || r.includes('f&b');
+                          }).length} found)</span>}
+                        </label>
+                        <select
+                          value={preparedById}
+                          onChange={(e) => setPreparedById(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 transition text-black font-medium"
+                        >
+                          <option value="">{employees.length === 0 ? "Searching for employees..." : "Choose a chef..."}</option>
+                          {Array.isArray(employees) && [...employees]
+                            .filter(emp => {
+                              if (!emp || !emp.id) return false;
+                              const r = (emp.role || '').toLowerCase();
+                              const n = (emp.name || '').toLowerCase();
+                              return r.includes('kitchen') || r.includes('chef') || r.includes('cook') || r.includes('kitch') || n.includes('chef') || r.includes('f&b');
+                            })
+                            .map((emp) => {
+                              const isOnline = emp.status === 'on_duty' || emp.is_clocked_in;
+                              return (
+                                <option
+                                  key={emp.id}
+                                  value={emp.id}
+                                  style={{ color: isOnline ? "#16a34a" : "inherit", fontWeight: isOnline ? "bold" : "normal" }}
+                                >
+                                  {emp.name || `Chef ${emp.id}`} {isOnline ? " 🟢 (Online)" : `(${emp.status || 'off_duty'})`}
+                                </option>
+                              );
+                            })}
+                        </select>
+                      </div>
+                      {orderType === "room_service" && (
+                        <div className="md:col-span-2 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                          <label className="block text-sm font-bold text-indigo-900 mb-2">
+                            Assign Delivery Person * {employees.length > 0 && <span className="text-xs text-indigo-700 font-normal">({employees.filter(e => {
+                              const r = (e.role || '').toLowerCase();
+                              return r.includes('waiter') || r.includes('house') || r.includes('service') || r.includes('delivery') || r.includes('staff') || r.includes('operational');
+                            }).length} found)</span>}
+                          </label>
+                          <select
+                            value={employeeId}
+                            onChange={(e) => setEmployeeId(e.target.value)}
+                            className="w-full border border-indigo-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 transition text-black font-medium bg-white"
+                          >
+                            <option value="">{employees.length === 0 ? "Searching for employees..." : "Choose a delivery person..."}</option>
+                            {Array.isArray(employees) && [...employees]
+                              .filter(emp => {
+                                if (!emp || !emp.id) return false;
+                                const r = (emp.role || '').toLowerCase();
+                                return r.includes('waiter') || r.includes('house') || r.includes('service') || r.includes('delivery') || r.includes('staff') || r.includes('operational');
+                              })
+                              .map((emp) => {
+                                const isOnline = emp.status === 'on_duty' || emp.is_clocked_in;
+                                return (
+                                  <option
+                                    key={emp.id}
+                                    value={emp.id}
+                                    style={{ color: isOnline ? "#16a34a" : "inherit", fontWeight: isOnline ? "bold" : "normal" }}
+                                  >
+                                    {emp.name || `Employee ${emp.id}`} {isOnline ? " 🟢 (Online)" : `(${emp.status || 'off_duty'})`}
+                                  </option>
+                                );
+                              })}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Order Type Selection */}
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-3">Order Type *</label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOrderType("dine_in");
+                            setDeliveryRequest("");
+                            calculateAmount(selectedItems, "dine_in");
+                          }}
+                          className={`flex items-center justify-center gap-3 p-4 border-2 rounded-xl transition-all ${orderType === "dine_in"
+                            ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md ring-2 ring-indigo-200"
+                            : "border-gray-200 hover:border-indigo-300 text-gray-600 bg-white"
+                            }`}
+                        >
+                          <UtensilsCrossed size={20} />
+                          <span className="font-bold">Dine In</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOrderType("room_service");
+                            calculateAmount(selectedItems, "room_service");
+                          }}
+                          className={`flex items-center justify-center gap-3 p-4 border-2 rounded-xl transition-all ${orderType === "room_service"
+                            ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md ring-2 ring-indigo-200"
+                            : "border-gray-200 hover:border-indigo-300 text-gray-600 bg-white"
+                            }`}
+                        >
+                          <Home size={20} />
+                          <span className="font-bold">Room Service</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Delivery Request */}
+                    {orderType === "room_service" && (
+                      <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                        <label className="block text-sm font-bold text-blue-900 mb-2 flex items-center gap-2">
+                          <Truck size={16} />
+                          Delivery Instructions (Optional)
+                        </label>
+                        <textarea
+                          placeholder="Add delivery instructions, timing preferences, or special notes..."
+                          className="w-full border border-blue-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 transition resize-none bg-white"
+                          rows="2"
+                          value={deliveryRequest}
+                          onChange={(e) => setDeliveryRequest(e.target.value)}
                         />
                       </div>
-                    ))}
-                    <button
-                      onClick={handleAddItem}
-                      type="button"
-                      className="w-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-medium rounded-lg px-4 py-2.5 transition-colors border border-indigo-300"
-                    >
-                      + Add Food Item
-                    </button>
-                  </div>
-                </div>
+                    )}
 
-                {/* Total and Submit */}
-                <div className="pt-4 border-t border-gray-200">
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-lg font-semibold text-gray-700">Order Total:</span>
-                    <span className="text-2xl font-bold text-indigo-600">₹{amount.toLocaleString('en-IN')}</span>
+                    {/* Food Items Selection */}
+                    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+                      <div className="flex justify-between items-center mb-4">
+                        <label className="text-sm font-bold text-gray-700 uppercase tracking-wider">Food Items *</label>
+                        <button
+                          onClick={handleAddItem}
+                          type="button"
+                          className="text-indigo-600 hover:text-indigo-700 font-bold text-sm flex items-center gap-1 bg-white px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm transition-all"
+                        >
+                          <Plus size={16} />
+                          Add Choice
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        {selectedItems.map((item, index) => (
+                          <div key={index} className="flex gap-3 items-center bg-white p-3 rounded-xl shadow-sm border border-gray-100 animate-in fade-in slide-in-from-left-2 duration-200">
+                            <div className="flex-1">
+                              <select
+                                value={item.food_item_id}
+                                onChange={(e) => handleItemChange(index, "food_item_id", e.target.value)}
+                                className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 text-black font-medium"
+                              >
+                                <option value="">Select food item...</option>
+                                {foodItems.map((f) => (
+                                  <option key={f.id} value={f.id}>
+                                    {f.name} - ₹{f.price}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="w-24">
+                              <input
+                                type="number"
+                                min={1}
+                                value={item.quantity}
+                                onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
+                                placeholder="Qty"
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 text-center font-bold"
+                              />
+                            </div>
+                            <button
+                              onClick={() => {
+                                const newItems = [...selectedItems];
+                                newItems.splice(index, 1);
+                                setSelectedItems(newItems);
+                                calculateAmount(newItems, orderType);
+                              }}
+                              className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        ))}
+                        {selectedItems.length === 0 && (
+                          <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                            <p className="text-gray-400 text-sm">No items added to this order yet</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <button
-                    onClick={handleSubmit}
-                    disabled={!roomId || !employeeId || selectedItems.length === 0}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all"
-                  >
-                    Create Order
-                  </button>
+
+                  {/* Modal Footer */}
+                  <div className="p-6 border-t border-gray-100 shrink-0 bg-gray-50 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Grand Total</span>
+                      <span className="text-3xl font-black text-indigo-700">₹{amount.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="flex gap-3 w-full sm:w-auto">
+                      <button
+                        onClick={() => setShowFoodOrderModal(false)}
+                        className="flex-1 sm:flex-none px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-bold hover:bg-gray-100 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSubmit}
+                        disabled={!roomId || (orderType === "room_service" && !employeeId) || selectedItems.length === 0}
+                        className="flex-1 sm:flex-none px-10 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2"
+                      >
+                        <ShoppingCart size={20} />
+                        Confirm Order
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Filters */}
             <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-5">
@@ -2320,9 +2529,15 @@ export default function FoodOrders() {
                             <span className="font-medium text-gray-800">{order.guest_name || "N/A"}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-gray-500">Employee:</span>
+                            <span className="text-gray-500">Delivery:</span>
                             <span className="font-medium text-gray-800">
-                              {order.employee_name || employees.find((e) => e.id === order.assigned_employee_id)?.name || "N/A"}
+                              {order.employee_name || employees.find((e) => e.id === order.assigned_employee_id)?.name || "Not Assigned"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Chef:</span>
+                            <span className="font-medium text-gray-800">
+                              {order.chef_name || employees.find((e) => e.id === order.prepared_by_id)?.name || "Not Assigned"}
                             </span>
                           </div>
                         </div>
@@ -3091,503 +3306,766 @@ export default function FoodOrders() {
             </div>
 
             {/* Food Item Management Section */}
-            <div className="bg-white p-6 rounded-xl shadow-lg">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">🍽️ Food Item Management</h2>
-                <p className="text-sm text-gray-500">Create and manage food items for your menu</p>
+            <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-lg border border-gray-100">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                  <div className="bg-indigo-100 p-2 rounded-lg">
+                    <ChefHat className="text-indigo-600" size={24} />
+                  </div>
+                  Food Item Management
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">Manage your restaurant menu items and pricing</p>
               </div>
-
-              <form onSubmit={handleFoodSubmit} className="space-y-6">
-                {/* Basic Information Section */}
-                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-                    Basic Information
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Item Name *</label>
-                      <input
-                        type="text"
-                        placeholder="Enter food item name"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-                      <select
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                        value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
-                        required
-                      >
-                        <option value="">Select a category</option>
-                        {categories.map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Description *</label>
-                      <textarea
-                        placeholder="Describe the food item..."
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
-                        rows="3"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
+              <button
+                onClick={() => {
+                  resetFoodForm();
+                  setShowFoodItemModal(true);
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center gap-2 group"
+              >
+                <div className="bg-white/20 p-1 rounded-md group-hover:rotate-90 transition-transform">
+                  <Plus size={18} />
                 </div>
+                <span>Add New Food Item</span>
+              </button>
+            </div>
 
-                {/* Pricing Section */}
-                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-                    Pricing
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Dine In Price (₹) *
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Room Service / Parcel Price (₹)
-                        <span className="text-xs text-gray-500 ml-1">(Optional)</span>
-                      </label>
-                      <input
-                        type="number"
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                        value={roomServicePrice}
-                        onChange={(e) => setRoomServicePrice(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Availability Section */}
-                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-                    Availability Settings
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-3 p-3 bg-white rounded-lg border border-gray-200">
-                      <input
-                        type="checkbox"
-                        id="available"
-                        checked={available}
-                        onChange={(e) => setAvailable(e.target.checked)}
-                        className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                      />
-                      <label htmlFor="available" className="text-sm font-medium text-gray-700 cursor-pointer">
-                        Make this item available for ordering
-                      </label>
-                    </div>
-                    <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                      <input
-                        type="checkbox"
-                        id="alwaysAvailable"
-                        checked={alwaysAvailable}
-                        onChange={(e) => {
-                          setAlwaysAvailable(e.target.checked);
-                          if (e.target.checked) {
-                            setAvailableFromTime("");
-                            setAvailableToTime("");
-                          }
-                        }}
-                        className="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                      />
-                      <label htmlFor="alwaysAvailable" className="text-sm font-medium text-gray-700 cursor-pointer">
-                        Always Available (24/7)
-                      </label>
-                      <span className="text-xs text-gray-500 ml-auto">Available at all times</span>
-                    </div>
-                    {!alwaysAvailable && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Available From</label>
-                          <input
-                            type="time"
-                            value={availableFromTime}
-                            onChange={(e) => setAvailableFromTime(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Available Until</label>
-                          <input
-                            type="time"
-                            value={availableToTime}
-                            onChange={(e) => setAvailableToTime(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                          />
-                        </div>
+            {/* Food Item Management Modal */}
+            {showFoodItemModal && (
+              <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[80] p-4 text-black">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] overflow-hidden flex flex-col scale-in-center">
+                  {/* Modal Header */}
+                  <div className="bg-gradient-to-r from-indigo-700 to-violet-800 p-6 text-white flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-4">
+                      <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
+                        <ChefHat size={28} />
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Images Section */}
-                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-                    Images
-                    <span className="text-xs font-normal text-gray-500 ml-2">(Optional)</span>
-                  </h3>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Upload Images</label>
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handleFoodImageChange}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-                    />
-                    {imagePreviews.length > 0 && (
-                      <div className="grid grid-cols-4 gap-3 mt-4">
-                        {imagePreviews.map((preview, idx) => (
-                          <div key={idx} className="relative group">
-                            <img src={preview} alt={`Preview ${idx + 1}`} className="w-full h-24 object-cover rounded-lg border-2 border-gray-200" />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveFoodImage(idx)}
-                              className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ))}
+                      <div>
+                        <h3 className="text-2xl font-black tracking-tight">
+                          {editingItemId ? "Edit Food Item" : "Create New Food Item"}
+                        </h3>
+                        <p className="text-indigo-100 text-sm opacity-90">
+                          {editingItemId ? `Updating: ${name}` : "Add a new dish to your menu"}
+                        </p>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Extra Inventory Items Section */}
-                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                  <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                        <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-                        Extra Items for Room Service/Parcel
-                      </h3>
-                      <p className="text-xs text-gray-500 mt-1">Add packaging, condiments, or other items (only for room service/parcel orders)</p>
                     </div>
                     <button
-                      type="button"
-                      onClick={handleAddExtraInventoryItem}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                      onClick={resetFoodForm}
+                      className="bg-white/10 hover:bg-white/20 p-2.5 rounded-full transition-all hover:rotate-90"
                     >
-                      <span>+</span> Add Item
+                      <X size={24} />
                     </button>
                   </div>
-                  {extraInventoryItems.length === 0 ? (
-                    <div className="text-center py-8 bg-white rounded-lg border-2 border-dashed border-gray-300">
-                      <p className="text-sm text-gray-500">No extra items added</p>
-                      <p className="text-xs text-gray-400 mt-1">Click "Add Item" to add packaging or condiments</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {extraInventoryItems.map((item, idx) => (
-                        <div key={idx} className="bg-white p-4 rounded-lg border border-gray-200 flex items-center gap-3">
-                          <select
-                            value={item.inventory_item_id}
-                            onChange={(e) => handleUpdateExtraInventoryItem(idx, "inventory_item_id", e.target.value)}
-                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          >
-                            <option value="">Select inventory item</option>
-                            {inventoryItemsList.map((inv) => (
-                              <option key={inv.id} value={inv.id}>
-                                {inv.name} ({inv.unit})
-                              </option>
+
+                  {/* Modal Content - Scrollable */}
+                  <div className="overflow-y-auto p-8 bg-gray-50/50">
+                    <form onSubmit={handleFoodSubmit} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Left Column: Basic Info & Pricing */}
+                      <div className="space-y-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                          <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                            <div className="w-1.5 h-4 bg-indigo-500 rounded-full"></div>
+                            Basic Details
+                          </h4>
+                          <div className="space-y-5">
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Item Name *</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Butter Chicken"
+                                className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 transition-all font-medium bg-gray-50/50"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Category *</label>
+                              <select
+                                className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 transition-all font-medium bg-gray-50/50"
+                                value={selectedCategory}
+                                onChange={(e) => setSelectedCategory(e.target.value)}
+                                required
+                              >
+                                <option value="">Select Category</option>
+                                {categories.map((cat) => (
+                                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Description *</label>
+                              <textarea
+                                placeholder="Describe the flavors, ingredients..."
+                                className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 transition-all font-medium bg-gray-50/50"
+                                rows="3"
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                          <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                            <div className="w-1.5 h-4 bg-emerald-500 rounded-full"></div>
+                            Pricing Options
+                          </h4>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Dine In (₹)</label>
+                              <div className="relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
+                                <input
+                                  type="number"
+                                  className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-3 focus:ring-2 focus:ring-emerald-500 transition-all font-bold text-emerald-700 bg-gray-50/50"
+                                  value={price}
+                                  onChange={(e) => setPrice(e.target.value)}
+                                  placeholder="0.00"
+                                  required
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Room Service (₹)</label>
+                              <div className="relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
+                                <input
+                                  type="number"
+                                  className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all font-bold text-blue-700 bg-gray-50/50"
+                                  value={roomServicePrice}
+                                  onChange={(e) => setRoomServicePrice(e.target.value)}
+                                  placeholder="Optional"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Column: Availability & Media & Extras */}
+                      <div className="space-y-6">
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                          <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                            <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
+                            Availability & Media
+                          </h4>
+                          <div className="space-y-4">
+                            <div className="flex gap-4">
+                              <label className="flex-1 flex items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all hover:bg-gray-50 font-bold">
+                                <input
+                                  type="checkbox"
+                                  checked={available}
+                                  onChange={(e) => setAvailable(e.target.checked)}
+                                  className="w-6 h-6 rounded-lg text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                                />
+                                <span className={available ? "text-gray-900" : "text-gray-400 line-through"}>Active for ordering</span>
+                              </label>
+                              <label className="flex-1 flex items-center gap-3 p-4 border-2 rounded-xl cursor-pointer transition-all hover:bg-gray-50 font-bold">
+                                <input
+                                  type="checkbox"
+                                  checked={alwaysAvailable}
+                                  onChange={(e) => setAlwaysAvailable(e.target.checked)}
+                                  className="w-6 h-6 rounded-lg text-amber-500 focus:ring-amber-500 border-gray-300"
+                                />
+                                <span className={alwaysAvailable ? "text-gray-900" : "text-gray-400 line-through"}>Available 24/7</span>
+                              </label>
+                            </div>
+
+                            {!alwaysAvailable && (
+                              <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2">
+                                <div>
+                                  <label className="block text-xs font-bold text-gray-500 mb-1">From</label>
+                                  <input type="time" className="w-full border border-gray-200 rounded-xl px-4 py-2" value={availableFromTime} onChange={(e) => setAvailableFromTime(e.target.value)} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-bold text-gray-500 mb-1">To</label>
+                                  <input type="time" className="w-full border border-gray-200 rounded-xl px-4 py-2" value={availableToTime} onChange={(e) => setAvailableToTime(e.target.value)} />
+                                </div>
+                              </div>
+                            )}
+
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Item Photos</label>
+                              <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 hover:border-indigo-300 transition-colors bg-gray-50/30">
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/*"
+                                  onChange={handleFoodImageChange}
+                                  className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-bold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                                />
+                                {imagePreviews.length > 0 && (
+                                  <div className="grid grid-cols-5 gap-2 mt-4">
+                                    {imagePreviews.map((preview, idx) => (
+                                      <div key={idx} className="relative aspect-square">
+                                        <img src={preview} className="w-full h-full object-cover rounded-lg border shadow-sm" />
+                                        <button onClick={() => handleRemoveFoodImage(idx)} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors">
+                                          <X size={12} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Extra Inventory Items */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                          <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                              <div className="w-1.5 h-4 bg-teal-500 rounded-full"></div>
+                              Room Service Extras
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={handleAddExtraInventoryItem}
+                              className="text-teal-600 hover:text-teal-700 font-bold text-xs bg-teal-50 px-2.5 py-1.5 rounded-lg transition-all"
+                            >
+                              + Add Item
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {extraInventoryItems.map((item, idx) => (
+                              <div key={idx} className="flex gap-2 items-center bg-gray-50 p-2 rounded-xl group animate-in slide-in-from-right-2">
+                                <select
+                                  value={item.inventory_item_id}
+                                  onChange={(e) => handleUpdateExtraInventoryItem(idx, "inventory_item_id", e.target.value)}
+                                  className="flex-1 border-none bg-transparent font-medium text-sm focus:ring-0"
+                                >
+                                  <option value="">Select Package/Item</option>
+                                  {inventoryItemsList.map(inv => <option key={inv.id} value={inv.id}>{inv.name}</option>)}
+                                </select>
+                                <input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) => handleUpdateExtraInventoryItem(idx, "quantity", e.target.value)}
+                                  className="w-16 border-none bg-white rounded-lg px-2 py-1 text-sm font-bold shadow-sm"
+                                />
+                                <button onClick={() => handleRemoveExtraInventoryItem(idx)} className="p-1.5 text-red-400 hover:text-red-600 transition-colors">
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             ))}
-                          </select>
-                          <input
-                            type="number"
-                            placeholder="Qty"
-                            value={item.quantity}
-                            onChange={(e) => handleUpdateExtraInventoryItem(idx, "quantity", e.target.value)}
-                            className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                            min="0"
-                            step="0.01"
-                          />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Time-wise Pricing (Full Width Section) */}
+                      <div className="lg:col-span-2 bg-indigo-50/30 p-8 rounded-3xl border border-indigo-100">
+                        <div className="flex justify-between items-center mb-6">
+                          <div>
+                            <h4 className="text-lg font-black text-indigo-900">Time-based Variable Pricing</h4>
+                            <p className="text-indigo-600 text-sm font-medium">Define different prices for Breakfast, Lunch, Dinner etc.</p>
+                          </div>
                           <button
                             type="button"
-                            onClick={() => handleRemoveExtraInventoryItem(idx)}
-                            className="bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-lg text-sm transition-colors"
+                            onClick={handleAddTimeWisePrice}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl shadow-md transition-all flex items-center gap-2"
                           >
-                            Remove
+                            <Plus size={18} />
+                            Add Pricing Tier
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Time-wise Pricing Section */}
-                <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                  <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                        <span className="w-1 h-6 bg-indigo-600 rounded"></span>
-                        Time-based Pricing
-                        <span className="text-xs font-normal text-gray-500 ml-2">(Optional)</span>
-                      </h3>
-                      <p className="text-xs text-gray-500 mt-1">Set different prices for breakfast, lunch, dinner, etc.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleAddTimeWisePrice}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                    >
-                      <span>+</span> Add Price
-                    </button>
-                  </div>
-                  {timeWisePrices.length === 0 ? (
-                    <div className="text-center py-8 bg-white rounded-lg border-2 border-dashed border-gray-300">
-                      <p className="text-sm text-gray-500">No time-based pricing set</p>
-                      <p className="text-xs text-gray-400 mt-1">Base price will be used for all times</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {timeWisePrices.map((tp, idx) => (
-                        <div key={idx} className="bg-white p-4 rounded-lg border border-gray-200 grid grid-cols-12 gap-3 items-center">
-                          <div className="col-span-3">
-                            <label className="block text-xs text-gray-500 mb-1">From</label>
-                            <input
-                              type="time"
-                              value={tp.from_time}
-                              onChange={(e) => handleUpdateTimeWisePrice(idx, "from_time", e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                              required
-                            />
-                          </div>
-                          <div className="col-span-3">
-                            <label className="block text-xs text-gray-500 mb-1">To</label>
-                            <input
-                              type="time"
-                              value={tp.to_time}
-                              onChange={(e) => handleUpdateTimeWisePrice(idx, "to_time", e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                              required
-                            />
-                          </div>
-                          <div className="col-span-4">
-                            <label className="block text-xs text-gray-500 mb-1">Price (₹)</label>
-                            <input
-                              type="number"
-                              placeholder="0.00"
-                              value={tp.price}
-                              onChange={(e) => handleUpdateTimeWisePrice(idx, "price", e.target.value)}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                              min="0"
-                              step="0.01"
-                              required
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveTimeWisePrice(idx)}
-                              className="w-full bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded-lg text-sm transition-colors mt-6"
-                            >
-                              Remove
-                            </button>
-                          </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {timeWisePrices.map((tp, idx) => (
+                            <div key={idx} className="bg-white p-4 rounded-2xl shadow-sm border border-indigo-100 flex flex-col gap-3 relative animate-in zoom-in-95 duration-200">
+                              <button
+                                onClick={() => handleRemoveTimeWisePrice(idx)}
+                                className="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full p-1.5 hover:bg-red-600 hover:text-white shadow-sm transition-all"
+                              >
+                                <X size={14} />
+                              </button>
+                              <div className="flex gap-2">
+                                <div className="flex-1">
+                                  <label className="block text-[10px] uppercase font-black text-gray-400 mb-1">From</label>
+                                  <input type="time" className="w-full border-gray-100 rounded-lg text-sm bg-gray-50/50" value={tp.from_time} onChange={(e) => handleUpdateTimeWisePrice(idx, "from_time", e.target.value)} />
+                                </div>
+                                <div className="flex-1">
+                                  <label className="block text-[10px] uppercase font-black text-gray-400 mb-1">To</label>
+                                  <input type="time" className="w-full border-gray-100 rounded-lg text-sm bg-gray-50/50" value={tp.to_time} onChange={(e) => handleUpdateTimeWisePrice(idx, "to_time", e.target.value)} />
+                                </div>
+                              </div>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
+                                <input
+                                  type="number"
+                                  className="w-full border-indigo-50 rounded-lg pl-7 py-2 font-black text-indigo-700 bg-indigo-50/30"
+                                  value={tp.price}
+                                  onChange={(e) => handleUpdateTimeWisePrice(idx, "price", e.target.value)}
+                                  placeholder="0.00"
+                                />
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Submit Buttons */}
-                <div className="flex gap-3 pt-4 border-t border-gray-200">
-                  <button
-                    type="submit"
-                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors shadow-md hover:shadow-lg"
-                  >
-                    {editingItemId ? "Update Food Item" : "Create Food Item"}
-                  </button>
-                  {editingItemId && (
-                    <button
-                      type="button"
-                      onClick={resetFoodForm}
-                      className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold py-3 px-6 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </form>
-
-              {/* Food Items List */}
-              <div className="mt-8">
-                <div className="mb-6">
-                  <h3 className="text-xl font-semibold text-gray-800 mb-4">All Food Items</h3>
-                  <div className="flex flex-wrap gap-3">
-                    <div className="flex-1 min-w-[200px]">
-                      <input
-                        type="text"
-                        placeholder="🔍 Search items..."
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
-                        value={filters.search}
-                        onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                      />
-                    </div>
-                    <select
-                      className="border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition min-w-[150px]"
-                      value={filters.category}
-                      onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-                    >
-                      <option value="all">All Categories</option>
-                      {categories.map((cat) => (
-                        <option key={cat.id} value={cat.id}>
-                          {cat.name}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      className="border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition min-w-[150px]"
-                      value={filters.availability}
-                      onChange={(e) => setFilters({ ...filters, availability: e.target.value })}
-                    >
-                      <option value="all">All Status</option>
-                      <option value="available">Available</option>
-                      <option value="unavailable">Unavailable</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredFoodItems.length === 0 ? (
-                    <div className="col-span-full text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                      <p className="text-gray-500">No food items found</p>
-                      <p className="text-sm text-gray-400 mt-1">Try adjusting your filters</p>
-                    </div>
-                  ) : (
-                    filteredFoodItems.map((item) => (
-                      <div key={item.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
-                        {/* Item Image */}
-                        {item.images && item.images.length > 0 && (
-                          <div className="relative h-40 bg-gray-100">
-                            <img
-                              src={getImageUrl(item.images[0].image_url)}
-                              alt={item.name}
-                              className="w-full h-full object-cover"
-                            />
-                            <span className={`absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-medium ${item.available ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-                              }`}>
-                              {item.available ? 'Available' : 'Unavailable'}
-                            </span>
+                        {timeWisePrices.length === 0 && (
+                          <div className="text-center py-12 border-2 border-dashed border-indigo-200 rounded-2xl">
+                            <Clock className="mx-auto text-indigo-200 mb-3" size={40} />
+                            <p className="text-indigo-400 font-bold">No variable pricing set</p>
+                            <p className="text-indigo-300 text-xs">The base Dine-In price will apply at all times</p>
                           </div>
                         )}
+                      </div>
 
-                        {/* Item Details */}
-                        <div className="p-4">
-                          <h3 className="font-semibold text-lg text-gray-800 mb-1">{item.name}</h3>
-                          <p className="text-sm text-gray-600 mb-3 line-clamp-2">{item.description}</p>
+                      {/* Action Buttons */}
+                      <div className="lg:col-span-2 flex gap-4 pt-6 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={resetFoodForm}
+                          className="flex-1 px-8 py-4 border-2 border-gray-200 rounded-2xl text-gray-600 font-black hover:bg-gray-50 transition-all uppercase tracking-widest text-sm"
+                        >
+                          Discard Changes
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isLoading}
+                          className="flex-[2] bg-indigo-700 hover:bg-indigo-800 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-100 transition-all uppercase tracking-widest text-sm flex items-center justify-center gap-3 disabled:bg-gray-400"
+                        >
+                          {isLoading ? (
+                            <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <>
+                              <CheckCircle size={20} />
+                              {editingItemId ? "Update Menu Item" : "Publish to Menu"}
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            )}
 
-                          {/* Pricing */}
-                          <div className="mb-3 space-y-2">
+            {/* Food Items List */}
+            <div className="mt-8">
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold text-gray-800 mb-4">All Food Items</h3>
+                <div className="flex flex-wrap gap-3">
+                  <div className="flex-1 min-w-[200px]">
+                    <input
+                      type="text"
+                      placeholder="🔍 Search items..."
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                      value={filters.search}
+                      onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    />
+                  </div>
+                  <select
+                    className="border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition min-w-[150px]"
+                    value={filters.category}
+                    onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+                  >
+                    <option value="all">All Categories</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition min-w-[150px]"
+                    value={filters.availability}
+                    onChange={(e) => setFilters({ ...filters, availability: e.target.value })}
+                  >
+                    <option value="all">All Status</option>
+                    <option value="available">Available</option>
+                    <option value="unavailable">Unavailable</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredFoodItems.length === 0 ? (
+                  <div className="col-span-full text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+                    <p className="text-gray-500">No food items found</p>
+                    <p className="text-sm text-gray-400 mt-1">Try adjusting your filters</p>
+                  </div>
+                ) : (
+                  filteredFoodItems.map((item) => (
+                    <div key={item.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition-shadow">
+                      {/* Item Image */}
+                      {item.images && item.images.length > 0 && (
+                        <div className="relative h-40 bg-gray-100">
+                          <img
+                            src={getImageUrl(item.images[0].image_url)}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                          />
+                          <span className={`absolute top-2 right-2 px-2 py-1 rounded-full text-xs font-medium ${item.available ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                            }`}>
+                            {item.available ? 'Available' : 'Unavailable'}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Item Details */}
+                      <div className="p-4">
+                        <h3 className="font-semibold text-lg text-gray-800 mb-1">{item.name}</h3>
+                        <p className="text-sm text-gray-600 mb-3 line-clamp-2">{item.description}</p>
+
+                        {/* Pricing */}
+                        <div className="mb-3 space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-500">Dine In:</span>
+                            <span className="font-semibold text-indigo-600">₹{item.price || 0}</span>
+                          </div>
+                          {item.room_service_price && (
                             <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-500">Dine In:</span>
-                              <span className="font-semibold text-indigo-600">₹{item.price || 0}</span>
+                              <span className="text-sm text-gray-500">Room Service:</span>
+                              <span className="font-semibold text-purple-600">₹{item.room_service_price}</span>
                             </div>
-                            {item.room_service_price && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-sm text-gray-500">Room Service:</span>
-                                <span className="font-semibold text-purple-600">₹{item.room_service_price}</span>
+                          )}
+                        </div>
+
+                        {/* Cost & Profit (if recipe exists) */}
+                        {(() => {
+                          const recipe = recipesData[item.id];
+                          let itemCost = 0;
+                          if (recipe && recipe.ingredients && Array.isArray(recipe.ingredients)) {
+                            const servings = recipe.servings || 1;
+                            recipe.ingredients.forEach(ing => {
+                              const invItem = inventoryItemsList.find(inv => inv.id === ing.inventory_item_id);
+                              if (invItem && invItem.unit_price) {
+                                itemCost += (ing.quantity || 0) * invItem.unit_price / servings;
+                              }
+                            });
+                          }
+                          const itemProfit = parseFloat(item.price || 0) - itemCost;
+                          const margin = parseFloat(item.price || 0) > 0 ? ((itemProfit / parseFloat(item.price || 0)) * 100) : 0;
+                          return itemCost > 0 ? (
+                            <div className="mb-3 p-2 bg-gray-50 rounded border border-gray-200">
+                              <div className="grid grid-cols-3 gap-2 text-xs">
+                                <div className="text-center">
+                                  <p className="text-gray-500 mb-1">Cost</p>
+                                  <p className="font-semibold text-red-600">₹{itemCost.toFixed(0)}</p>
+                                </div>
+                                <div className="text-center">
+                                  <p className="text-gray-500 mb-1">Profit</p>
+                                  <p className={`font-semibold ${itemProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    ₹{itemProfit.toFixed(0)}
+                                  </p>
+                                </div>
+                                <div className="text-center">
+                                  <p className="text-gray-500 mb-1">Margin</p>
+                                  <p className={`font-semibold ${margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {margin.toFixed(0)}%
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null;
+                        })()}
+
+                        {/* Actions */}
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          <button
+                            onClick={() => setViewingFoodItemDetails(item)}
+                            className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm py-2 px-3 rounded-lg transition-colors font-bold border border-indigo-200"
+                          >
+                            Details
+                          </button>
+                          <button
+                            onClick={() => handleFoodEdit(item)}
+                            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm py-2 px-3 rounded-lg transition-colors font-medium text-center"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => toggleFoodAvailability(item)}
+                            className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm py-2 px-3 rounded-lg transition-colors font-medium"
+                          >
+                            {item.available ? 'Hide' : 'Show'}
+                          </button>
+                          <button
+                            onClick={() => handleFoodDelete(item.id)}
+                            className="bg-red-50 hover:bg-red-100 text-red-600 text-sm py-2 px-3 rounded-lg transition-colors font-medium text-center"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+
+            {/* Food Item Details Modal */}
+            {viewingFoodItemDetails && (() => {
+              const item = { ...viewingFoodItemDetails };
+
+              // Safely parse JSON strings from backend if needed
+              if (item.time_wise_prices && typeof item.time_wise_prices === 'string') {
+                try {
+                  item.time_wise_prices = JSON.parse(item.time_wise_prices);
+                } catch (e) {
+                  item.time_wise_prices = [];
+                }
+              }
+              if (item.extra_inventory_items && typeof item.extra_inventory_items === 'string') {
+                try {
+                  item.extra_inventory_items = JSON.parse(item.extra_inventory_items);
+                } catch (e) {
+                  item.extra_inventory_items = [];
+                }
+              }
+
+              const stats = getFoodItemStats(item.id);
+              const recipe = recipesData[item.id];
+
+              return (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4 text-black">
+                  <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                    {/* Header */}
+                    <div className="bg-indigo-700 p-6 text-white flex justify-between items-center shrink-0">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-white/20 p-2 rounded-lg">
+                          <UtensilsCrossed size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-bold">{item.name}</h3>
+                          <p className="text-indigo-100 text-sm">{item.category?.name || "General"}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setViewingFoodItemDetails(null)}
+                        className="bg-white/20 hover:bg-white/30 p-2 rounded-full transition-colors"
+                      >
+                        <X size={20} />
+                      </button>
+                    </div>
+
+                    {/* Content */}
+                    <div className="overflow-y-auto p-6 space-y-8">
+                      {/* Grid for basics and stats */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* Description and Basics */}
+                        <div className="space-y-6">
+                          <div>
+                            <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Description</h4>
+                            <p className="text-gray-700 leading-relaxed">{item.description}</p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                              <p className="text-xs text-blue-600 font-bold uppercase">Dine-In Price</p>
+                              <p className="text-2xl font-bold text-blue-900">₹{item.price}</p>
+                            </div>
+                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                              <p className="text-xs text-purple-600 font-bold uppercase">Room Service</p>
+                              <p className="text-2xl font-bold text-purple-900">₹{item.room_service_price || item.price}</p>
+                            </div>
+                          </div>
+
+                          {/* Availability details */}
+                          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                            <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+                              <span className="text-indigo-600">⏰</span>
+                              Availability Timings
+                            </h4>
+                            {item.always_available ? (
+                              <p className="text-sm text-green-700 font-medium">✨ Always available (24/7)</p>
+                            ) : (
+                              <div className="flex items-center gap-4 text-sm">
+                                <div className="bg-white px-3 py-1 rounded-lg border border-gray-200">
+                                  <span className="text-gray-500 mr-2">From:</span>
+                                  <span className="font-bold text-gray-800">{item.available_from_time || "00:00"}</span>
+                                </div>
+                                <div className="bg-white px-3 py-1 rounded-lg border border-gray-200">
+                                  <span className="text-gray-500 mr-2">Until:</span>
+                                  <span className="font-bold text-gray-800">{item.available_to_time || "23:59"}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {item.time_wise_prices && item.time_wise_prices.length > 0 && (
+                              <div className="mt-4 pt-4 border-t border-gray-200">
+                                <p className="text-xs font-bold text-gray-500 mb-2 uppercase">Time-based Pricing</p>
+                                <div className="space-y-2">
+                                  {item.time_wise_prices.map((tp, idx) => (
+                                    <div key={idx} className="flex justify-between items-center bg-white p-2 rounded-lg text-xs border border-gray-100">
+                                      <span>{tp.from_time} - {tp.to_time}</span>
+                                      <span className="font-bold text-indigo-600 font-medium">₹{tp.price}</span>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                           </div>
+                        </div>
 
-                          {/* Cost & Profit (if recipe exists) */}
-                          {(() => {
-                            const recipe = recipesData[item.id];
-                            let itemCost = 0;
-                            if (recipe && recipe.ingredients && Array.isArray(recipe.ingredients)) {
-                              const servings = recipe.servings || 1;
-                              recipe.ingredients.forEach(ing => {
-                                const invItem = inventoryItemsList.find(inv => inv.id === ing.inventory_item_id);
-                                if (invItem && invItem.unit_price) {
-                                  itemCost += (ing.quantity || 0) * invItem.unit_price / servings;
-                                }
-                              });
-                            }
-                            const itemProfit = parseFloat(item.price || 0) - itemCost;
-                            const margin = parseFloat(item.price || 0) > 0 ? ((itemProfit / parseFloat(item.price || 0)) * 100) : 0;
-                            return itemCost > 0 ? (
-                              <div className="mb-3 p-2 bg-gray-50 rounded border border-gray-200">
-                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                  <div className="text-center">
-                                    <p className="text-gray-500 mb-1">Cost</p>
-                                    <p className="font-semibold text-red-600">₹{itemCost.toFixed(0)}</p>
-                                  </div>
-                                  <div className="text-center">
-                                    <p className="text-gray-500 mb-1">Profit</p>
-                                    <p className={`font-semibold ${itemProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                      ₹{itemProfit.toFixed(0)}
-                                    </p>
-                                  </div>
-                                  <div className="text-center">
-                                    <p className="text-gray-500 mb-1">Margin</p>
-                                    <p className={`font-semibold ${margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                      {margin.toFixed(0)}%
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : null;
-                          })()}
+                        {/* Performance Stats */}
+                        <div className="bg-gray-900 rounded-2xl p-6 text-white">
+                          <h4 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-6 flex items-center gap-2">
+                            <span className="text-green-400">📈</span>
+                            Time-Based Analytics
+                          </h4>
 
-                          {/* Actions */}
-                          <div className="flex gap-2 mt-4">
-                            <button
-                              onClick={() => handleFoodEdit(item)}
-                              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm py-2 px-3 rounded-lg transition-colors font-medium"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => toggleFoodAvailability(item)}
-                              className="bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm py-2 px-3 rounded-lg transition-colors font-medium"
-                            >
-                              {item.available ? 'Hide' : 'Show'}
-                            </button>
-                            <button
-                              onClick={() => handleFoodDelete(item.id)}
-                              className="bg-red-100 hover:bg-red-200 text-red-700 text-sm py-2 px-3 rounded-lg transition-colors font-medium"
-                            >
-                              Delete
-                            </button>
+                          <div className="grid grid-cols-2 gap-6 mb-8">
+                            <div>
+                              <p className="text-xs text-gray-400 mb-1">Total Quantity Sold</p>
+                              <p className="text-3xl font-bold">{stats.totalQuantity}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-400 mb-1">Total Revenue Generated</p>
+                              <p className="text-3xl font-bold text-green-400">₹{stats.totalRevenue.toLocaleString()}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-400 mb-1">Peak Popularity Time</p>
+                              <p className="text-xl font-bold text-yellow-400">{stats.peakHour}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-400 mb-1">Best Selling Day</p>
+                              <p className="text-xl font-bold">{stats.topDay}</p>
+                            </div>
+                          </div>
+
+                          {/* Simple Hourly Map (Horizontal Visualization) */}
+                          <div>
+                            <p className="text-xs text-gray-400 mb-3 text-black">Popularity by Hour (24h)</p>
+                            <div className="flex items-end gap-1 h-24">
+                              {stats.hourlySales.map((qty, i) => {
+                                const max = Math.max(...stats.hourlySales) || 1;
+                                const height = (qty / max) * 100;
+                                return (
+                                  <div
+                                    key={i}
+                                    title={`${i}:00 - ${qty} items`}
+                                    className="flex-1 bg-indigo-500/30 rounded-t-sm hover:bg-indigo-400 transition-colors group relative"
+                                    style={{ height: `${Math.max(height, 5)}%` }}
+                                  >
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-black text-[10px] p-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10 transition-opacity">
+                                      {i}:00 ({qty})
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="flex justify-between mt-1 text-[10px] text-gray-500">
+                              <span>00:00</span>
+                              <span>06:00</span>
+                              <span>12:00</span>
+                              <span>18:00</span>
+                              <span>23:00</span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    ))
-                  )}
+
+                      {/* Recipe and Extra Items */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-gray-100">
+                        {/* Recipe Section */}
+                        <div>
+                          <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <ChefHat size={20} className="text-orange-500" />
+                            Recipe & Cost Breakdown
+                          </h4>
+                          {recipe ? (
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-2 gap-3 text-xs">
+                                <div className="bg-gray-100 p-2 rounded">
+                                  <span className="text-gray-500 block mb-1">Servings</span>
+                                  <span className="font-bold">{recipe.servings || 1} Person(s)</span>
+                                </div>
+                                <div className="bg-gray-100 p-2 rounded">
+                                  <span className="text-gray-500 block mb-1">Cook Time</span>
+                                  <span className="font-bold">{recipe.cook_time_minutes || "--"} mins</span>
+                                </div>
+                              </div>
+                              <div className="border rounded-xl overflow-hidden overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-gray-50">
+                                    <tr className="text-left text-xs uppercase text-gray-500 tracking-wider">
+                                      <th className="px-3 py-2">Ingredient</th>
+                                      <th className="px-3 py-2">Qty</th>
+                                      <th className="px-3 py-2">Cost</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {recipe.ingredients.map((ing, idx) => {
+                                      const invItem = inventoryItemsList.find(inv => inv.id === ing.inventory_item_id);
+                                      const cost = (ing.quantity || 0) * (invItem?.unit_price || 0);
+                                      return (
+                                        <tr key={idx}>
+                                          <td className="px-3 py-2 text-gray-700">{invItem?.name || ing.inventory_item_name}</td>
+                                          <td className="px-3 py-2 font-medium">{ing.quantity} {ing.unit}</td>
+                                          <td className="px-3 py-2 text-red-600">₹{cost.toFixed(1)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                  <tfoot className="bg-gray-50 font-bold border-t">
+                                    <tr>
+                                      <td colSpan="2" className="px-3 py-2 text-right">Total Recipe Cost:</td>
+                                      <td className="px-3 py-2 text-red-700">
+                                        ₹{recipe.ingredients.reduce((sum, ing) => {
+                                          const invItem = inventoryItemsList.find(inv => inv.id === ing.inventory_item_id);
+                                          return sum + ((ing.quantity || 0) * (invItem?.unit_price || 0));
+                                        }, 0).toFixed(1)}
+                                      </td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100 text-yellow-800 text-sm">
+                              No recipe associated with this item yet. Cost metrics will be limited.
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Extra Items for Room Service */}
+                        <div>
+                          <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <Truck size={20} className="text-indigo-600" />
+                            Delivery/Parcel Extras
+                          </h4>
+                          {item.extra_inventory_items && item.extra_inventory_items.length > 0 ? (
+                            <div className="space-y-3">
+                              <p className="text-xs text-gray-500 italic">These items are automatically consumed during room service or parcel orders.</p>
+                              {item.extra_inventory_items.map((extra, idx) => {
+                                const invItem = inventoryItemsList.find(inv => inv.id === extra.inventory_item_id);
+                                return (
+                                  <div key={idx} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                                    <div className="flex items-center gap-3">
+                                      <div className="bg-white p-2 rounded shadow-sm text-indigo-600">
+                                        <Package size={14} />
+                                      </div>
+                                      <span className="text-sm font-medium">{invItem?.name || "Extra Item"}</span>
+                                    </div>
+                                    <span className="text-sm font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
+                                      {extra.quantity} {invItem?.unit || "pcs"}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-500 italic py-4">No automatic extra items configured for delivery/parcel.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-6 bg-gray-50 border-t flex justify-end shrink-0">
+                      <button
+                        onClick={() => setViewingFoodItemDetails(null)}
+                        className="bg-gray-800 hover:bg-black text-white px-8 py-3 rounded-xl font-bold transition-all transform hover:scale-105"
+                      >
+                        Close Details
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Food Category Management Section */}
             <div className="bg-white p-8 rounded-2xl shadow-lg">
@@ -3662,6 +4140,6 @@ export default function FoodOrders() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </DashboardLayout >
   );
 }
